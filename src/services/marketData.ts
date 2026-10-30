@@ -596,6 +596,18 @@ export class MarketDataService {
             updated_at: updated.updatedAt,
           })
           .eq('symbol', clean);
+
+        // Record in admin audit logs
+        await supabase.from('admin_audit_logs').insert({
+          action: 'UPDATE_TRAJECTORY',
+          target_symbol: clean,
+          details: {
+            direction,
+            target_price: options?.targetPrice,
+            strength: options?.strength,
+            algorithm: options?.algorithm,
+          },
+        });
       } catch (err) {
         console.warn('[MarketEngine] Failed updating trend in Supabase:', err);
       }
@@ -739,6 +751,79 @@ export class MarketDataService {
     }
 
     return true;
+  }
+
+  /**
+   * Fetch current platform settings
+   */
+  static async getAdminSettings() {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('admin_settings')
+          .select('*')
+          .eq('id', 'default')
+          .single();
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('Failed fetching admin settings from Supabase', err);
+      }
+    }
+    return {
+      id: 'default',
+      platform_name: 'WellsTrading',
+      market_status: 'OPEN',
+      tick_interval_ms: 1000,
+      default_leverage: 100,
+      demo_initial_balance: 10000.0,
+      allow_user_registration: true,
+      allow_custom_pairs: true,
+      global_drift_multiplier: 1.0,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Update platform settings
+   */
+  static async updateAdminSettings(settings: Record<string, any>) {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase
+          .from('admin_settings')
+          .update({ ...settings, updated_at: new Date().toISOString() })
+          .eq('id', 'default');
+        if (!error) {
+          await supabase.from('admin_audit_logs').insert({
+            action: 'UPDATE_SETTINGS',
+            details: settings,
+          });
+          return true;
+        }
+      } catch (err) {
+        console.warn('Failed updating admin settings', err);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Get recent audit logs
+   */
+  static async getAuditLogs(limit: number = 30) {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('admin_audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('Failed fetching audit logs', err);
+      }
+    }
+    return [];
   }
 
   /**

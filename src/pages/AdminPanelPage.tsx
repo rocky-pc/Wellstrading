@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MarketDataService } from '@/services/marketData';
-import { Instrument, MarketTrend, MarketQuote, AssetClass } from '@/types';
+import { Instrument, MarketTrend, MarketQuote, AssetClass, AdminSettings, AdminAuditLog } from '@/types';
 import { formatPrice } from '@/lib/instruments';
+import { useAuth } from '@/context/AuthContext';
 import {
   TrendingUp,
   TrendingDown,
@@ -19,10 +20,18 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
+  Database,
+  Lock,
+  User,
+  History,
+  Settings as SettingsIcon,
+  Check,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const AdminPanelPage: React.FC = () => {
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'CONTROLS' | 'SETTINGS' | 'LOGS'>('CONTROLS');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -31,6 +40,10 @@ export const AdminPanelPage: React.FC = () => {
 
   // Target price input state per symbol
   const [targetInputs, setTargetInputs] = useState<Record<string, string>>({});
+
+  // Admin Settings State
+  const [settings, setSettings] = useState<AdminSettings | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
 
   // New Custom Pair Form State
   const [newPair, setNewPair] = useState({
@@ -50,10 +63,14 @@ export const AdminPanelPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Load and refresh instruments
-  const refreshList = () => {
+  // Load instruments & settings
+  const refreshList = async () => {
     const list = MarketDataService.getAllInstruments();
     setInstruments([...list]);
+    const s = await MarketDataService.getAdminSettings();
+    if (s) setSettings(s as any);
+    const logs = await MarketDataService.getAuditLogs(20);
+    if (logs) setAuditLogs(logs as any);
   };
 
   useEffect(() => {
@@ -101,7 +118,7 @@ export const AdminPanelPage: React.FC = () => {
     });
     refreshList();
     setLoading(false);
-    showToast(`Target price ${val} applied for ${symbol}. Trajectory seeking target.`);
+    showToast(`Target price ${val} applied for ${symbol}. Seeking target.`);
   };
 
   // Quick Pump (+3%)
@@ -137,6 +154,15 @@ export const AdminPanelPage: React.FC = () => {
       refreshList();
       showToast(`Deleted ${symbol}`);
     }
+  };
+
+  // Save Settings
+  const handleSaveSettings = async (updates: Partial<AdminSettings>) => {
+    if (!settings) return;
+    const newSettings = { ...settings, ...updates };
+    setSettings(newSettings);
+    await MarketDataService.updateAdminSettings(updates);
+    showToast('Platform settings updated');
   };
 
   // Create Custom Pair Submit
@@ -213,25 +239,29 @@ export const AdminPanelPage: React.FC = () => {
                 <Shield className="w-5 h-5" />
               </div>
               <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">
-                Admin Market Control Panel
+                Admin Control &amp; Market Engine
               </h1>
               <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">
                 LIVE 1-SEC ALGORITHM
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Configure deterministic live market movements, set UP or DOWN trajectories, create customized pairs, and broadcast to all users with low latency.
+              Deterministic trajectories, instant shocks, custom pairs, and Supabase database controls.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => MarketDataService.resetToDefaults().then(refreshList)}
-              className="px-3 py-2 text-xs font-semibold text-slate-400 hover:text-white bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Reset Defaults</span>
-            </button>
+          {/* Admin Identity & Actions */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-slate-400">Admin:</span>
+              <span className="font-bold text-white">
+                {user?.email || 'sjega82@gmail.com'}
+              </span>
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                ROOT
+              </span>
+            </div>
 
             <button
               onClick={() => setShowCreateModal(true)}
@@ -243,232 +273,453 @@ export const AdminPanelPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Total Instruments</span>
-            <div className="text-xl font-bold text-white mt-0.5">{totalPairs}</div>
-            <div className="text-[10px] text-slate-500 mt-0.5">Predefined + Custom</div>
-          </div>
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+          <button
+            onClick={() => setActiveTab('CONTROLS')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+              activeTab === 'CONTROLS'
+                ? 'bg-slate-800 text-emerald-400 border border-emerald-500/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            <span>Market Trajectory Controls ({instruments.length})</span>
+          </button>
 
-          <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Bullish Moving (UP)</span>
-            <div className="text-xl font-bold text-emerald-400 mt-0.5 flex items-center gap-1">
-              <TrendingUp className="w-4 h-4" />
-              <span>{upPairs}</span>
-            </div>
-            <div className="text-[10px] text-emerald-500/70 mt-0.5">Climbing sec by sec</div>
-          </div>
+          <button
+            onClick={() => setActiveTab('SETTINGS')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+              activeTab === 'SETTINGS'
+                ? 'bg-slate-800 text-emerald-400 border border-emerald-500/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <SettingsIcon className="w-4 h-4" />
+            <span>Platform &amp; Database Settings</span>
+          </button>
 
-          <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Bearish Moving (DOWN)</span>
-            <div className="text-xl font-bold text-rose-400 mt-0.5 flex items-center gap-1">
-              <TrendingDown className="w-4 h-4" />
-              <span>{downPairs}</span>
-            </div>
-            <div className="text-[10px] text-rose-500/70 mt-0.5">Falling sec by sec</div>
-          </div>
-
-          <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Engine Latency</span>
-            <div className="text-xl font-bold text-sky-400 mt-0.5 flex items-center gap-1">
-              <Activity className="w-4 h-4 animate-pulse" />
-              <span>1000ms</span>
-            </div>
-            <div className="text-[10px] text-sky-500/70 mt-0.5">Synchronized for all users</div>
-          </div>
+          <button
+            onClick={() => setActiveTab('LOGS')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+              activeTab === 'LOGS'
+                ? 'bg-slate-800 text-emerald-400 border border-emerald-500/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>Audit History</span>
+          </button>
         </div>
 
-        {/* Instruments Control Grid */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
-              Active Currency Pairs & Controls ({instruments.length})
-            </h2>
-            <span className="text-xs text-slate-400 font-mono">
-              Click UP or DOWN to change movement in real-time
-            </span>
-          </div>
+        {/* TAB 1: CONTROLS */}
+        {activeTab === 'CONTROLS' && (
+          <div className="space-y-6">
+            {/* Stats Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Total Pairs</span>
+                <div className="text-xl font-bold text-white mt-0.5">{totalPairs}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Predefined + Custom</div>
+              </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {instruments.map((inst) => {
-              const liveQuote = quotes[inst.symbol];
-              const curPrice = liveQuote ? liveQuote.price : inst.currentPrice;
-              const isUp = inst.direction === 'UP';
-              const isDown = inst.direction === 'DOWN';
-              const isFlat = inst.direction === 'SIDEWAYS';
-              const targetVal = targetInputs[inst.symbol] || (inst.targetPrice ? String(inst.targetPrice) : '');
+              <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Bullish (UP)</span>
+                <div className="text-xl font-bold text-emerald-400 mt-0.5 flex items-center gap-1">
+                  <TrendingUp className="w-4 h-4" />
+                  <span>{upPairs}</span>
+                </div>
+                <div className="text-[10px] text-emerald-500/70 mt-0.5">Climbing sec by sec</div>
+              </div>
 
-              return (
-                <div
-                  key={inst.symbol}
-                  className={`bg-[#090e1a] rounded-xl border p-4 transition-all duration-200 ${
-                    isUp
-                      ? 'border-emerald-500/30 hover:border-emerald-500/60'
-                      : isDown
-                      ? 'border-rose-500/30 hover:border-rose-500/60'
-                      : 'border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  {/* Pair Header */}
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-base text-white">{inst.symbol}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                          {inst.assetClass}
-                        </span>
-                        {inst.isCustom && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                            CUSTOM
+              <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Bearish (DOWN)</span>
+                <div className="text-xl font-bold text-rose-400 mt-0.5 flex items-center gap-1">
+                  <TrendingDown className="w-4 h-4" />
+                  <span>{downPairs}</span>
+                </div>
+                <div className="text-[10px] text-rose-500/70 mt-0.5">Falling sec by sec</div>
+              </div>
+
+              <div className="bg-[#0b1120] border border-slate-800/80 rounded-xl p-3.5">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Engine Latency</span>
+                <div className="text-xl font-bold text-sky-400 mt-0.5 flex items-center gap-1">
+                  <Activity className="w-4 h-4 animate-pulse" />
+                  <span>{settings?.tick_interval_ms || 1000}ms</span>
+                </div>
+                <div className="text-[10px] text-sky-500/70 mt-0.5">Synchronized for all users</div>
+              </div>
+            </div>
+
+            {/* Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {instruments.map((inst) => {
+                const liveQuote = quotes[inst.symbol];
+                const curPrice = liveQuote ? liveQuote.price : inst.currentPrice;
+                const isUp = inst.direction === 'UP';
+                const isDown = inst.direction === 'DOWN';
+                const isFlat = inst.direction === 'SIDEWAYS';
+                const targetVal = targetInputs[inst.symbol] || (inst.targetPrice ? String(inst.targetPrice) : '');
+
+                return (
+                  <div
+                    key={inst.symbol}
+                    className={`bg-[#090e1a] rounded-xl border p-4 transition-all duration-200 ${
+                      isUp
+                        ? 'border-emerald-500/30 hover:border-emerald-500/60'
+                        : isDown
+                        ? 'border-rose-500/30 hover:border-rose-500/60'
+                        : 'border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Pair Header */}
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-base text-white">{inst.symbol}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                            {inst.assetClass}
                           </span>
-                        )}
+                          {inst.isCustom && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                              CUSTOM
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-400">{inst.name}</span>
                       </div>
-                      <span className="text-xs text-slate-400">{inst.name}</span>
+
+                      <div className="text-right">
+                        <div className="font-mono font-bold text-lg text-white">
+                          {formatPrice(curPrice, inst.digits)}
+                        </div>
+                        <div
+                          className={`text-xs font-mono font-semibold ${
+                            liveQuote && liveQuote.changePercent24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {liveQuote && liveQuote.changePercent24h >= 0 ? '+' : ''}
+                          {liveQuote ? liveQuote.changePercent24h.toFixed(2) : '0.00'}%
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className="font-mono font-bold text-lg text-white">
-                        {formatPrice(curPrice, inst.digits)}
+                    {/* Active Trajectory */}
+                    <div className="my-3 py-1.5 px-3 rounded-lg bg-slate-900/90 border border-slate-800/80 flex items-center justify-between text-xs font-mono">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400 text-[11px]">ACTIVE TRAJECTORY:</span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                            isUp
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : isDown
+                              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              : 'bg-slate-800 text-slate-300'
+                          }`}
+                        >
+                          {isUp ? '▲ MOVING UP' : isDown ? '▼ MOVING DOWN' : '— CONSOLIDATING'}
+                        </span>
                       </div>
-                      <div
-                        className={`text-xs font-mono font-semibold ${
-                          liveQuote && liveQuote.changePercent24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                        }`}
-                      >
-                        {liveQuote && liveQuote.changePercent24h >= 0 ? '+' : ''}
-                        {liveQuote ? liveQuote.changePercent24h.toFixed(2) : '0.00'}%
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Current Active Trajectory Banner */}
-                  <div className="my-3 py-1.5 px-3 rounded-lg bg-slate-900/90 border border-slate-800/80 flex items-center justify-between text-xs font-mono">
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-[11px]">ACTIVE TRAJECTORY:</span>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                      {inst.targetPrice && (
+                        <div className="text-[11px] text-sky-400 flex items-center gap-1">
+                          <Target className="w-3 h-3" />
+                          <span>Target: {formatPrice(inst.targetPrice, inst.digits)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Directional Buttons */}
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <button
+                        onClick={() => handleSetDirection(inst.symbol, 'UP')}
+                        className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                           isUp
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : isDown
-                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                            : 'bg-slate-800 text-slate-300'
+                            ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 font-black'
+                            : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20'
                         }`}
                       >
-                        {isUp ? '▲ MOVING UP' : isDown ? '▼ MOVING DOWN' : '— CONSOLIDATING'}
-                      </span>
+                        <ArrowUpRight className="w-4 h-4" />
+                        <span>FORCE UP</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleSetDirection(inst.symbol, 'DOWN')}
+                        className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          isDown
+                            ? 'bg-rose-500 text-slate-950 shadow-lg shadow-rose-500/20 font-black'
+                            : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20'
+                        }`}
+                      >
+                        <ArrowDownRight className="w-4 h-4" />
+                        <span>FORCE DOWN</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleSetDirection(inst.symbol, 'SIDEWAYS')}
+                        className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          isFlat
+                            ? 'bg-slate-200 text-slate-950 shadow font-black'
+                            : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700'
+                        }`}
+                      >
+                        <Minus className="w-4 h-4" />
+                        <span>FLAT</span>
+                      </button>
                     </div>
 
-                    {inst.targetPrice && (
-                      <div className="text-[11px] text-sky-400 flex items-center gap-1">
-                        <Target className="w-3 h-3" />
-                        <span>Target: {formatPrice(inst.targetPrice, inst.digits)}</span>
+                    {/* Target Price Seeker & Quick Actions */}
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80 text-xs">
+                      <div className="flex-1 min-w-[170px] flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder={`Target price (e.g. ${formatPrice(curPrice * 1.02, inst.digits)})`}
+                          value={targetVal}
+                          onChange={(e) =>
+                            setTargetInputs({ ...targetInputs, [inst.symbol]: e.target.value })
+                          }
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+                        />
+                        <button
+                          onClick={() => handleApplyTarget(inst.symbol)}
+                          className="px-2.5 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded font-semibold whitespace-nowrap transition-colors"
+                        >
+                          Seek
+                        </button>
                       </div>
-                    )}
+
+                      <button
+                        onClick={() => handleQuickPump(inst.symbol)}
+                        title="Instant 3% rally"
+                        className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded font-bold transition-colors flex items-center gap-1"
+                      >
+                        <Zap className="w-3 h-3" />
+                        <span>+3% Rally</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleQuickDump(inst.symbol)}
+                        title="Instant 3% drop"
+                        className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded font-bold transition-colors flex items-center gap-1"
+                      >
+                        <Zap className="w-3 h-3" />
+                        <span>-3% Drop</span>
+                      </button>
+
+                      <Link
+                        to={`/trade/${inst.symbol.replace('/', '-')}`}
+                        target="_blank"
+                        className="p-1.5 text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded transition-colors"
+                        title="Open in Terminal"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Link>
+
+                      {inst.isCustom && (
+                        <button
+                          onClick={() => handleDelete(inst.symbol)}
+                          className="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded transition-colors"
+                          title="Delete custom pair"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: SETTINGS & DATABASE */}
+        {activeTab === 'SETTINGS' && (
+          <div className="space-y-6">
+            {/* Database & Connection Overview */}
+            <div className="bg-[#0b1120] border border-slate-800 rounded-2xl p-6 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Database className="w-5 h-5 text-sky-400" />
+                  <h3 className="font-bold text-base text-white">Supabase Database Integration</h3>
+                </div>
+                <span className="px-2.5 py-0.5 text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Connected: rtcbdviyzkhxwaxwpzqn
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+                <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
+                  <div className="text-slate-400">Database Engine</div>
+                  <div className="font-bold text-slate-100 text-sm">PostgreSQL 17.6</div>
+                  <div className="text-[10px] text-emerald-400">Row Level Security (RLS) Active</div>
+                </div>
+
+                <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
+                  <div className="text-slate-400">Project Ref ID</div>
+                  <div className="font-bold text-slate-100 text-sm">rtcbdviyzkhxwaxwpzqn</div>
+                  <div className="text-[10px] text-sky-400">Region: ap-southeast-2</div>
+                </div>
+
+                <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
+                  <div className="text-slate-400">Realtime Replication</div>
+                  <div className="font-bold text-slate-100 text-sm">Enabled</div>
+                  <div className="text-[10px] text-slate-400">market_instruments &amp; admin_settings</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Platform Control Settings Form */}
+            {settings && (
+              <div className="bg-[#0b1120] border border-slate-800 rounded-2xl p-6 space-y-6">
+                <h3 className="font-bold text-base text-white flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-emerald-400" />
+                  <span>Platform Parameters</span>
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1.5">Global Market Status</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['OPEN', 'HALTED', 'MAINTENANCE'] as const).map((status) => (
+                        <button
+                          key={status}
+                          type="button"
+                          onClick={() => handleSaveSettings({ market_status: status })}
+                          className={`py-2 px-3 rounded-lg font-bold transition-colors ${
+                            settings.market_status === status
+                              ? 'bg-emerald-500 text-slate-950 shadow'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                          }`}
+                        >
+                          {status}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Primary Directional Switcher Buttons */}
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    <button
-                      onClick={() => handleSetDirection(inst.symbol, 'UP')}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                        isUp
-                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 font-black'
-                          : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20'
-                      }`}
-                    >
-                      <ArrowUpRight className="w-4 h-4" />
-                      <span>FORCE UP</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleSetDirection(inst.symbol, 'DOWN')}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                        isDown
-                          ? 'bg-rose-500 text-slate-950 shadow-lg shadow-rose-500/20 font-black'
-                          : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20'
-                      }`}
-                    >
-                      <ArrowDownRight className="w-4 h-4" />
-                      <span>FORCE DOWN</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleSetDirection(inst.symbol, 'SIDEWAYS')}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                        isFlat
-                          ? 'bg-slate-200 text-slate-950 shadow font-black'
-                          : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 border border-slate-700'
-                      }`}
-                    >
-                      <Minus className="w-4 h-4" />
-                      <span>FLAT</span>
-                    </button>
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1.5">Default Account Leverage</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[50, 100, 200, 500].map((lev) => (
+                        <button
+                          key={lev}
+                          type="button"
+                          onClick={() => handleSaveSettings({ default_leverage: lev })}
+                          className={`py-2 px-3 rounded-lg font-bold transition-colors font-mono ${
+                            settings.default_leverage === lev
+                              ? 'bg-emerald-500 text-slate-950 shadow'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                          }`}
+                        >
+                          1:{lev}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Target Price Seeker & Quick Actions */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80 text-xs">
-                    <div className="flex-1 min-w-[170px] flex items-center gap-1.5">
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1.5">Engine Tick Interval</label>
+                    <div className="grid grid-cols-3 gap-2 font-mono">
+                      {[500, 1000, 2000].map((ms) => (
+                        <button
+                          key={ms}
+                          type="button"
+                          onClick={() => handleSaveSettings({ tick_interval_ms: ms })}
+                          className={`py-2 px-3 rounded-lg font-bold transition-colors ${
+                            settings.tick_interval_ms === ms
+                              ? 'bg-emerald-500 text-slate-950 shadow'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                          }`}
+                        >
+                          {ms === 1000 ? '1000ms (1s)' : `${ms}ms`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-bold mb-1.5">Virtual Demo Starting Balance</label>
+                    <div className="flex items-center gap-2 font-mono">
                       <input
                         type="number"
-                        step="any"
-                        placeholder={`Target price (e.g. ${formatPrice(curPrice * 1.02, inst.digits)})`}
-                        value={targetVal}
+                        value={settings.demo_initial_balance}
                         onChange={(e) =>
-                          setTargetInputs({ ...targetInputs, [inst.symbol]: e.target.value })
+                          setSettings({ ...settings, demo_initial_balance: parseFloat(e.target.value) || 10000 })
                         }
-                        className="w-full bg-slate-900 border border-slate-700/80 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+                        className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold w-48 focus:outline-none focus:border-emerald-500"
                       />
                       <button
-                        onClick={() => handleApplyTarget(inst.symbol)}
-                        className="px-2.5 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded font-semibold whitespace-nowrap transition-colors"
+                        onClick={() => handleSaveSettings({ demo_initial_balance: settings.demo_initial_balance })}
+                        className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg font-bold transition-colors"
                       >
-                        Seek
+                        Save
                       </button>
                     </div>
-
-                    <button
-                      onClick={() => handleQuickPump(inst.symbol)}
-                      title="Instant 3% rally"
-                      className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded font-bold transition-colors flex items-center gap-1"
-                    >
-                      <Zap className="w-3 h-3" />
-                      <span>+3% Rally</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleQuickDump(inst.symbol)}
-                      title="Instant 3% drop"
-                      className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded font-bold transition-colors flex items-center gap-1"
-                    >
-                      <Zap className="w-3 h-3" />
-                      <span>-3% Drop</span>
-                    </button>
-
-                    <Link
-                      to={`/trade/${inst.symbol.replace('/', '-')}`}
-                      target="_blank"
-                      className="p-1.5 text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded transition-colors"
-                      title="Open in Terminal"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Link>
-
-                    {inst.isCustom && (
-                      <button
-                        onClick={() => handleDelete(inst.symbol)}
-                        className="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded transition-colors"
-                        title="Delete custom pair"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
-        </div>
+        )}
+
+        {/* TAB 3: AUDIT LOGS */}
+        {activeTab === 'LOGS' && (
+          <div className="bg-[#0b1120] border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <History className="w-4 h-4 text-emerald-400" />
+                <span>Admin Actions &amp; Audit Logs</span>
+              </h3>
+              <button
+                onClick={refreshList}
+                className="p-1.5 rounded text-slate-400 hover:text-white bg-slate-900 border border-slate-800 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              {auditLogs.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-xs font-mono">
+                  No audit logs recorded yet. Changes made to pairs or settings will be tracked here.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-[#070b14] text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                    <tr>
+                      <th className="py-2.5 px-4">Timestamp</th>
+                      <th className="py-2.5 px-4">Action</th>
+                      <th className="py-2.5 px-4">Target Symbol</th>
+                      <th className="py-2.5 px-4">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-sans">
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-800/40">
+                        <td className="py-2.5 px-4 font-mono text-slate-400 text-[11px]">
+                          {new Date(log.created_at).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-emerald-400 border border-slate-700">
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 font-bold text-white font-mono">
+                          {log.target_symbol || '—'}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono text-[11px] text-slate-300">
+                          {log.details ? JSON.stringify(log.details) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal: Create Customized Currency Pair */}
@@ -627,7 +878,7 @@ export const AdminPanelPage: React.FC = () => {
                   type="submit"
                   className="px-5 py-2 text-xs font-bold bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-lg shadow-sm"
                 >
-                  Create & Broadcast to All Users
+                  Create &amp; Broadcast to All Users
                 </button>
               </div>
             </form>

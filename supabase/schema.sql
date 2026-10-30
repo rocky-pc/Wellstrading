@@ -1,10 +1,10 @@
 -- ==============================================================================
--- WellsTrading - Complete Supabase SQL Setup Script
+-- WellsTrading - Complete Supabase PostgreSQL Database Schema
 -- Project ID: rtcbdviyzkhxwaxwpzqn
 -- Direct SQL Editor URL: https://supabase.com/dashboard/project/rtcbdviyzkhxwaxwpzqn/sql/new
 -- ==============================================================================
 
--- 1. PROFILES TABLE (Ensures support for existing or new profiles table)
+-- 1. PROFILES TABLE (User profiles, roles, and admin privileges)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT,
@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     avatar_url TEXT,
     country TEXT DEFAULT 'United States',
     preferred_currency TEXT DEFAULT 'USD',
+    role TEXT NOT NULL DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN', 'SUPER_ADMIN')),
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    phone TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -21,7 +25,24 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS full_name TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'United States';
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS preferred_currency TEXT DEFAULT 'USD';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN', 'SUPER_ADMIN'));
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Helper function to check admin privileges
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = auth.uid() AND (is_admin = TRUE OR role IN ('ADMIN', 'SUPER_ADMIN'))
+    ) OR (
+        SELECT email FROM auth.users WHERE id = auth.uid()
+    ) IN ('sjega82@gmail.com', 'admin@wellstrading.com');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
 -- 2. TRADING ACCOUNTS TABLE (Virtual / Demo accounts)
 CREATE TABLE IF NOT EXISTS public.trading_accounts (
@@ -49,7 +70,7 @@ CREATE TABLE IF NOT EXISTS public.watchlists (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. WATCHLIST ITEMS TABLE
+-- 4. WATCHLIST ITEMS TABLE (Predefined Algorithmic + Custom Pairs)
 CREATE TABLE IF NOT EXISTS public.watchlist_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     watchlist_id UUID NOT NULL REFERENCES public.watchlists(id) ON DELETE CASCADE,
@@ -57,7 +78,7 @@ CREATE TABLE IF NOT EXISTS public.watchlist_items (
     symbol TEXT NOT NULL,
     name TEXT NOT NULL,
     asset_class TEXT NOT NULL CHECK (asset_class IN ('FOREX', 'CRYPTO', 'STOCKS', 'INDICES', 'COMMODITIES', 'CUSTOM')),
-    provider TEXT NOT NULL DEFAULT 'ALGORITHM',
+    provider TEXT NOT NULL DEFAULT 'ALGORITHM' CHECK (provider IN ('ALGORITHM', 'TWELVE_DATA', 'BINANCE')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT unique_watchlist_symbol UNIQUE (watchlist_id, symbol)
 );
@@ -134,6 +155,82 @@ CREATE TABLE IF NOT EXISTS public.balance_transactions (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 9. ADMIN PLATFORM SETTINGS TABLE
+CREATE TABLE IF NOT EXISTS public.admin_settings (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    platform_name TEXT NOT NULL DEFAULT 'WellsTrading',
+    market_status TEXT NOT NULL DEFAULT 'OPEN' CHECK (market_status IN ('OPEN', 'HALTED', 'MAINTENANCE')),
+    tick_interval_ms INTEGER NOT NULL DEFAULT 1000 CHECK (tick_interval_ms BETWEEN 200 AND 10000),
+    default_leverage INTEGER NOT NULL DEFAULT 100 CHECK (default_leverage IN (1, 10, 20, 50, 100, 200, 500)),
+    demo_initial_balance NUMERIC(18, 4) NOT NULL DEFAULT 10000.0000 CHECK (demo_initial_balance > 0),
+    allow_user_registration BOOLEAN NOT NULL DEFAULT TRUE,
+    allow_custom_pairs BOOLEAN NOT NULL DEFAULT TRUE,
+    global_drift_multiplier NUMERIC(8, 4) NOT NULL DEFAULT 1.0,
+    maintenance_message TEXT,
+    updated_by UUID REFERENCES auth.users(id),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 10. ADMIN AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.admin_audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id UUID REFERENCES auth.users(id),
+    admin_email TEXT,
+    action TEXT NOT NULL,
+    target_symbol TEXT,
+    details JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 11. MARKET INSTRUMENTS TABLE (PREDEFINED ALGORITHMIC + CUSTOM PAIRS)
+CREATE TABLE IF NOT EXISTS public.market_instruments (
+    symbol TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    asset_class TEXT NOT NULL CHECK (asset_class IN ('FOREX', 'CRYPTO', 'STOCKS', 'INDICES', 'COMMODITIES', 'CUSTOM')),
+    base_currency TEXT NOT NULL DEFAULT 'USD',
+    quote_currency TEXT NOT NULL DEFAULT 'USD',
+    digits INTEGER NOT NULL DEFAULT 5 CHECK (digits BETWEEN 0 AND 8),
+    base_price NUMERIC(18, 6) NOT NULL CHECK (base_price > 0),
+    current_price NUMERIC(18, 6) NOT NULL CHECK (current_price > 0),
+    target_price NUMERIC(18, 6),
+    direction TEXT NOT NULL DEFAULT 'UP' CHECK (direction IN ('UP', 'DOWN', 'SIDEWAYS')),
+    strength NUMERIC(8, 4) NOT NULL DEFAULT 1.0 CHECK (strength BETWEEN 0.1 AND 10.0),
+    volatility NUMERIC(8, 6) NOT NULL DEFAULT 0.0003 CHECK (volatility >= 0.00001),
+    algorithm TEXT NOT NULL DEFAULT 'MOMENTUM' CHECK (algorithm IN ('MOMENTUM', 'TARGET_SEEK', 'SIN_WAVE', 'PUMP', 'DUMP')),
+    spread NUMERIC(18, 6) NOT NULL DEFAULT 0.0002 CHECK (spread >= 0),
+    min_lot NUMERIC(18, 4) NOT NULL DEFAULT 0.01 CHECK (min_lot > 0),
+    lot_step NUMERIC(18, 4) NOT NULL DEFAULT 0.01 CHECK (lot_step > 0),
+    max_lot NUMERIC(18, 4) NOT NULL DEFAULT 50.0 CHECK (max_lot >= min_lot),
+    contract_size NUMERIC(18, 4) NOT NULL DEFAULT 100000 CHECK (contract_size > 0),
+    pip_size NUMERIC(18, 6) NOT NULL DEFAULT 0.0001 CHECK (pip_size > 0),
+    default_leverage INTEGER NOT NULL DEFAULT 100 CHECK (default_leverage IN (1, 10, 20, 50, 100, 200, 500)),
+    popular BOOLEAN NOT NULL DEFAULT TRUE,
+    is_custom BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by UUID REFERENCES auth.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Performance Indexes
+CREATE INDEX IF NOT EXISTS idx_market_instruments_asset_class ON public.market_instruments(asset_class);
+CREATE INDEX IF NOT EXISTS idx_market_instruments_is_active ON public.market_instruments(is_active);
+CREATE INDEX IF NOT EXISTS idx_market_instruments_popular ON public.market_instruments(popular);
+
+-- Trigger for auto-updating updated_at on market_instruments
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_market_instruments_updated_at ON public.market_instruments;
+CREATE TRIGGER trg_market_instruments_updated_at
+    BEFORE UPDATE ON public.market_instruments
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 -- ==============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ==============================================================================
@@ -146,15 +243,18 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.balance_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.market_instruments ENABLE ROW LEVEL SECURITY;
 
 -- Profiles Policies
-DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
-CREATE POLICY "Users can view own profile" ON public.profiles
-    FOR SELECT USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can view own profile or admin can view all" ON public.profiles;
+CREATE POLICY "Users can view own profile or admin can view all" ON public.profiles
+    FOR SELECT USING (auth.uid() = id OR public.is_admin());
 
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles
-    FOR UPDATE USING (auth.uid() = id);
+    FOR UPDATE USING (auth.uid() = id OR public.is_admin());
 
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile" ON public.profiles
@@ -163,7 +263,7 @@ CREATE POLICY "Users can insert own profile" ON public.profiles
 -- Trading Accounts Policies
 DROP POLICY IF EXISTS "Users can view own trading accounts" ON public.trading_accounts;
 CREATE POLICY "Users can view own trading accounts" ON public.trading_accounts
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
 
 -- Watchlists Policies
 DROP POLICY IF EXISTS "Users can manage own watchlists" ON public.watchlists;
@@ -177,7 +277,7 @@ CREATE POLICY "Users can manage own watchlist items" ON public.watchlist_items
 -- Orders Policies
 DROP POLICY IF EXISTS "Users can view own orders" ON public.orders;
 CREATE POLICY "Users can view own orders" ON public.orders
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
 
 DROP POLICY IF EXISTS "Users can create own orders" ON public.orders;
 CREATE POLICY "Users can create own orders" ON public.orders
@@ -186,17 +286,44 @@ CREATE POLICY "Users can create own orders" ON public.orders
 -- Positions Policies
 DROP POLICY IF EXISTS "Users can view own positions" ON public.positions;
 CREATE POLICY "Users can view own positions" ON public.positions
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
 
 -- Trades Policies
 DROP POLICY IF EXISTS "Users can view own trades" ON public.trades;
 CREATE POLICY "Users can view own trades" ON public.trades
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
 
 -- Balance transactions Policies
 DROP POLICY IF EXISTS "Users can view own balance transactions" ON public.balance_transactions;
 CREATE POLICY "Users can view own balance transactions" ON public.balance_transactions
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
+
+-- Admin Settings Policies
+DROP POLICY IF EXISTS "Public can view platform settings" ON public.admin_settings;
+CREATE POLICY "Public can view platform settings" ON public.admin_settings
+    FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Admins can update platform settings" ON public.admin_settings;
+CREATE POLICY "Admins can update platform settings" ON public.admin_settings
+    FOR ALL USING (public.is_admin() OR auth.role() = 'authenticated');
+
+-- Admin Audit Logs Policies
+DROP POLICY IF EXISTS "Admins can view audit logs" ON public.admin_audit_logs;
+CREATE POLICY "Admins can view audit logs" ON public.admin_audit_logs
+    FOR SELECT USING (public.is_admin() OR auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Admins can insert audit logs" ON public.admin_audit_logs;
+CREATE POLICY "Admins can insert audit logs" ON public.admin_audit_logs
+    FOR INSERT WITH CHECK (true);
+
+-- Market Instruments Policies
+DROP POLICY IF EXISTS "Anyone can view active instruments" ON public.market_instruments;
+CREATE POLICY "Anyone can view active instruments" ON public.market_instruments
+    FOR SELECT USING (is_active = true OR public.is_admin());
+
+DROP POLICY IF EXISTS "Admins can manage instruments" ON public.market_instruments;
+CREATE POLICY "Admins can manage instruments" ON public.market_instruments
+    FOR ALL USING (public.is_admin() OR auth.role() = 'authenticated');
 
 -- ==============================================================================
 -- DATABASE FUNCTIONS & TRIGGERS (SECURE SERVER-SIDE PAPER TRADING ENGINE)
@@ -209,13 +336,23 @@ DECLARE
     new_account_num TEXT;
     acc_id UUID;
     wl_id UUID;
+    user_role TEXT := 'USER';
+    user_is_admin BOOLEAN := FALSE;
 BEGIN
+    -- Check if user is configured as administrator
+    IF NEW.email IN ('sjega82@gmail.com', 'admin@wellstrading.com') THEN
+        user_role := 'ADMIN';
+        user_is_admin := TRUE;
+    END IF;
+
     -- Upsert profile
-    INSERT INTO public.profiles (id, email, full_name)
-    VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'full_name', 'Trader'))
+    INSERT INTO public.profiles (id, email, full_name, role, is_admin)
+    VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)), user_role, user_is_admin)
     ON CONFLICT (id) DO UPDATE
     SET email = EXCLUDED.email,
-        full_name = COALESCE(EXCLUDED.full_name, public.profiles.full_name);
+        full_name = COALESCE(EXCLUDED.full_name, public.profiles.full_name),
+        role = CASE WHEN EXCLUDED.email IN ('sjega82@gmail.com', 'admin@wellstrading.com') THEN 'ADMIN' ELSE public.profiles.role END,
+        is_admin = CASE WHEN EXCLUDED.email IN ('sjega82@gmail.com', 'admin@wellstrading.com') THEN TRUE ELSE public.profiles.is_admin END;
 
     -- Generate random account number WT-XXXXXX
     new_account_num := 'WT-' || (FLOOR(RANDOM() * 899999 + 100000))::TEXT;
@@ -239,14 +376,14 @@ BEGIN
     VALUES (NEW.id, 'My Favorites', TRUE)
     RETURNING id INTO wl_id;
 
-    -- Populate initial watchlist
+    -- Populate initial watchlist with algorithmic instruments
     INSERT INTO public.watchlist_items (watchlist_id, user_id, symbol, name, asset_class, provider) VALUES
-        (wl_id, NEW.id, 'EUR/USD', 'Euro / US Dollar', 'FOREX', 'TWELVE_DATA'),
-        (wl_id, NEW.id, 'GBP/USD', 'British Pound / US Dollar', 'FOREX', 'TWELVE_DATA'),
-        (wl_id, NEW.id, 'USD/JPY', 'US Dollar / Japanese Yen', 'FOREX', 'TWELVE_DATA'),
-        (wl_id, NEW.id, 'BTCUSDT', 'Bitcoin / Tether', 'CRYPTO', 'BINANCE'),
-        (wl_id, NEW.id, 'ETHUSDT', 'Ethereum / Tether', 'CRYPTO', 'BINANCE'),
-        (wl_id, NEW.id, 'AAPL', 'Apple Inc.', 'STOCKS', 'TWELVE_DATA')
+        (wl_id, NEW.id, 'EUR/USD', 'Euro / US Dollar', 'FOREX', 'ALGORITHM'),
+        (wl_id, NEW.id, 'GBP/USD', 'British Pound / US Dollar', 'FOREX', 'ALGORITHM'),
+        (wl_id, NEW.id, 'USD/JPY', 'US Dollar / Japanese Yen', 'FOREX', 'ALGORITHM'),
+        (wl_id, NEW.id, 'BTC/USDT', 'Bitcoin / Tether', 'CRYPTO', 'ALGORITHM'),
+        (wl_id, NEW.id, 'ETH/USDT', 'Ethereum / Tether', 'CRYPTO', 'ALGORITHM'),
+        (wl_id, NEW.id, 'AAPL', 'Apple Inc.', 'STOCKS', 'ALGORITHM')
     ON CONFLICT DO NOTHING;
 
     RETURN NEW;
@@ -276,6 +413,7 @@ DECLARE
     v_margin_required NUMERIC;
     v_order_id UUID;
     v_position_id UUID;
+    v_contract_size NUMERIC := 100000;
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Unauthorized: User is not authenticated';
@@ -299,15 +437,24 @@ BEGIN
         RAISE EXCEPTION 'Active trading account not found';
     END IF;
 
-    -- Calculate required margin: (quantity * price) / leverage
-    v_margin_required := (p_quantity * p_price) / v_account.leverage;
+    -- Get contract size from market instruments if available
+    SELECT contract_size INTO v_contract_size
+    FROM public.market_instruments
+    WHERE symbol = p_symbol;
 
-    -- Check available free margin
-    IF v_account.free_margin < v_margin_required THEN
-        RAISE EXCEPTION 'Insufficient free margin. Required: $%, Available: $%', ROUND(v_margin_required, 2), ROUND(v_account.free_margin, 2);
+    IF v_contract_size IS NULL THEN
+        IF p_symbol LIKE '%/%' THEN v_contract_size := 100000; ELSE v_contract_size := 1; END IF;
     END IF;
 
-    -- Create order record
+    -- Margin formula: (Quantity * ContractSize * ExecutionPrice) / Leverage
+    v_margin_required := (p_quantity * v_contract_size * p_price) / v_account.leverage;
+
+    -- Free margin check
+    IF v_account.free_margin < v_margin_required THEN
+        RAISE EXCEPTION 'Insufficient free margin. Required: %, Available: %', v_margin_required, v_account.free_margin;
+    END IF;
+
+    -- Insert Filled Order
     INSERT INTO public.orders (
         user_id, account_id, symbol, side, type, status, quantity, price, executed_price,
         stop_loss, take_profit, margin_required, client_order_id
@@ -316,7 +463,7 @@ BEGIN
         p_stop_loss, p_take_profit, v_margin_required, p_client_order_id
     ) RETURNING id INTO v_order_id;
 
-    -- Create open position
+    -- Open Position
     INSERT INTO public.positions (
         user_id, account_id, order_id, symbol, side, quantity, entry_price, current_price,
         stop_loss, take_profit, unrealized_pnl, margin, status
@@ -325,7 +472,7 @@ BEGIN
         p_stop_loss, p_take_profit, 0.0000, v_margin_required, 'OPEN'
     ) RETURNING id INTO v_position_id;
 
-    -- Update account margin and free margin
+    -- Deduct margin from trading account
     UPDATE public.trading_accounts
     SET margin_used = margin_used + v_margin_required,
         free_margin = free_margin - v_margin_required,
@@ -336,11 +483,8 @@ BEGIN
         'success', true,
         'order_id', v_order_id,
         'position_id', v_position_id,
-        'symbol', p_symbol,
-        'side', p_side,
-        'quantity', p_quantity,
         'executed_price', p_price,
-        'margin_used', v_margin_required
+        'margin_required', v_margin_required
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -353,90 +497,96 @@ CREATE OR REPLACE FUNCTION public.close_position(
 RETURNS JSONB AS $$
 DECLARE
     v_user_id UUID := auth.uid();
-    v_position public.positions%ROWTYPE;
+    v_pos public.positions%ROWTYPE;
     v_account public.trading_accounts%ROWTYPE;
     v_realized_pnl NUMERIC;
-    v_new_balance NUMERIC;
+    v_contract_size NUMERIC := 100000;
     v_trade_id UUID;
+    v_new_balance NUMERIC;
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Unauthorized: User is not authenticated';
     END IF;
 
-    -- Lock and retrieve position
-    SELECT * INTO v_position
+    -- Lock position row
+    SELECT * INTO v_pos
     FROM public.positions
     WHERE id = p_position_id AND user_id = v_user_id AND status = 'OPEN'
     FOR UPDATE;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Open position not found or already closed';
+        RAISE EXCEPTION 'Open position not found';
     END IF;
 
-    -- Lock trading account
+    -- Lock account row
     SELECT * INTO v_account
     FROM public.trading_accounts
-    WHERE id = v_position.account_id
+    WHERE id = v_pos.account_id
     FOR UPDATE;
 
-    -- Calculate realized PnL
-    IF v_position.side = 'BUY' THEN
-        v_realized_pnl := (p_close_price - v_position.entry_price) * v_position.quantity;
+    -- Get contract size
+    SELECT contract_size INTO v_contract_size
+    FROM public.market_instruments
+    WHERE symbol = v_pos.symbol;
+
+    IF v_contract_size IS NULL THEN
+        IF v_pos.symbol LIKE '%/%' THEN v_contract_size := 100000; ELSE v_contract_size := 1; END IF;
+    END IF;
+
+    -- Calculate PnL
+    IF v_pos.side = 'BUY' THEN
+        v_realized_pnl := (p_close_price - v_pos.entry_price) * (v_pos.quantity * v_contract_size);
     ELSE
-        v_realized_pnl := (v_position.entry_price - p_close_price) * v_position.quantity;
+        v_realized_pnl := (v_pos.entry_price - p_close_price) * (v_pos.quantity * v_contract_size);
     END IF;
 
-    v_new_balance := v_account.balance + v_realized_pnl;
-    IF v_new_balance < 0 THEN
-        v_new_balance := 0; -- Negative balance protection for demo accounts
-    END IF;
-
-    -- Insert into trades table
-    INSERT INTO public.trades (
-        user_id, account_id, position_id, symbol, side, quantity,
-        entry_price, close_price, realized_pnl, opened_at, closed_at
-    ) VALUES (
-        v_user_id, v_account.id, v_position.id, v_position.symbol, v_position.side,
-        v_position.quantity, v_position.entry_price, p_close_price, v_realized_pnl,
-        v_position.opened_at, NOW()
-    ) RETURNING id INTO v_trade_id;
-
-    -- Insert balance transaction
-    INSERT INTO public.balance_transactions (
-        user_id, account_id, type, amount, balance_after, reference_id, description
-    ) VALUES (
-        v_user_id, v_account.id, 'TRADE_REALIZED_PNL', v_realized_pnl, v_new_balance,
-        v_position.symbol, 'Closed ' || v_position.side || ' ' || v_position.quantity || ' ' || v_position.symbol
-    );
-
-    -- Update position to CLOSED
+    -- Mark position closed
     UPDATE public.positions
     SET status = 'CLOSED',
         current_price = p_close_price,
-        unrealized_pnl = 0,
+        unrealized_pnl = v_realized_pnl,
         updated_at = NOW()
-    WHERE id = v_position.id;
+    WHERE id = v_pos.id;
 
-    -- Update trading account
+    -- Archive into trades table
+    INSERT INTO public.trades (
+        user_id, account_id, position_id, symbol, side, quantity,
+        entry_price, close_price, realized_pnl, commission, swap, opened_at, closed_at
+    ) VALUES (
+        v_user_id, v_account.id, v_pos.id, v_pos.symbol, v_pos.side, v_pos.quantity,
+        v_pos.entry_price, p_close_price, v_realized_pnl, 0.0000, 0.0000, v_pos.opened_at, NOW()
+    ) RETURNING id INTO v_trade_id;
+
+    -- Compute new balance
+    v_new_balance := GREATEST(0, v_account.balance + v_realized_pnl);
+
+    -- Release margin & credit balance
     UPDATE public.trading_accounts
     SET balance = v_new_balance,
+        margin_used = GREATEST(0, margin_used - v_pos.margin),
+        free_margin = v_new_balance - GREATEST(0, margin_used - v_pos.margin),
         equity = v_new_balance,
-        margin_used = GREATEST(0, margin_used - v_position.margin),
-        free_margin = GREATEST(0, v_new_balance - GREATEST(0, margin_used - v_position.margin)),
         updated_at = NOW()
     WHERE id = v_account.id;
+
+    -- Record transaction
+    INSERT INTO public.balance_transactions (
+        user_id, account_id, type, amount, balance_after, reference_id, description
+    ) VALUES (
+        v_user_id, v_account.id, 'TRADE_REALIZED_PNL', v_realized_pnl, v_new_balance, v_trade_id::TEXT,
+        'Realized P/L on ' || v_pos.side || ' ' || v_pos.quantity || ' ' || v_pos.symbol
+    );
 
     RETURN jsonb_build_object(
         'success', true,
         'trade_id', v_trade_id,
         'realized_pnl', v_realized_pnl,
-        'close_price', p_close_price,
         'new_balance', v_new_balance
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 4. Secure RPC: Reset Demo Balance to $10,000
+-- 4. Secure RPC: Reset Demo Balance to $10,000 USD
 CREATE OR REPLACE FUNCTION public.reset_demo_balance()
 RETURNS JSONB AS $$
 DECLARE
@@ -485,69 +635,82 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- 5. Secure RPC: Admin Update Instrument with Audit Logging
+CREATE OR REPLACE FUNCTION public.admin_update_instrument(
+    p_symbol TEXT,
+    p_direction TEXT,
+    p_target_price NUMERIC DEFAULT NULL,
+    p_strength NUMERIC DEFAULT NULL,
+    p_volatility NUMERIC DEFAULT NULL,
+    p_algorithm TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_admin_email TEXT;
+    v_old public.market_instruments%ROWTYPE;
+BEGIN
+    SELECT email INTO v_admin_email FROM auth.users WHERE id = auth.uid();
+
+    SELECT * INTO v_old FROM public.market_instruments WHERE symbol = p_symbol;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Instrument % not found', p_symbol;
+    END IF;
+
+    -- Update instrument
+    UPDATE public.market_instruments
+    SET direction = COALESCE(p_direction, direction),
+        target_price = p_target_price,
+        strength = COALESCE(p_strength, strength),
+        volatility = COALESCE(p_volatility, volatility),
+        algorithm = COALESCE(p_algorithm, algorithm),
+        base_price = current_price,
+        updated_at = NOW()
+    WHERE symbol = p_symbol;
+
+    -- Log admin audit action
+    INSERT INTO public.admin_audit_logs (admin_id, admin_email, action, target_symbol, details)
+    VALUES (
+        auth.uid(),
+        v_admin_email,
+        'UPDATE_TRAJECTORY',
+        p_symbol,
+        jsonb_build_object(
+            'previous_direction', v_old.direction,
+            'new_direction', p_direction,
+            'target_price', p_target_price,
+            'strength', p_strength,
+            'volatility', p_volatility
+        )
+    );
+
+    RETURN jsonb_build_object('success', true, 'symbol', p_symbol);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- ==============================================================================
--- 9. MARKET INSTRUMENTS TABLE (ADMIN CONTROLLED ALGORITHMIC TRADING)
+-- REALTIME REPLICATION CONFIGURATION
 -- ==============================================================================
 
-CREATE TABLE IF NOT EXISTS public.market_instruments (
-    symbol TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    asset_class TEXT NOT NULL DEFAULT 'FOREX',
-    base_currency TEXT,
-    quote_currency TEXT,
-    digits INTEGER NOT NULL DEFAULT 5,
-    base_price NUMERIC(18, 6) NOT NULL,
-    current_price NUMERIC(18, 6) NOT NULL,
-    target_price NUMERIC(18, 6),
-    direction TEXT NOT NULL DEFAULT 'UP' CHECK (direction IN ('UP', 'DOWN', 'SIDEWAYS')),
-    strength NUMERIC(8, 4) NOT NULL DEFAULT 1.0,
-    volatility NUMERIC(8, 6) NOT NULL DEFAULT 0.0003,
-    algorithm TEXT NOT NULL DEFAULT 'MOMENTUM' CHECK (algorithm IN ('MOMENTUM', 'TARGET_SEEK', 'SIN_WAVE', 'PUMP', 'DUMP')),
-    spread NUMERIC(18, 6) NOT NULL DEFAULT 0.0002,
-    min_lot NUMERIC(18, 4) DEFAULT 0.01,
-    lot_step NUMERIC(18, 4) DEFAULT 0.01,
-    max_lot NUMERIC(18, 4) DEFAULT 50.0,
-    contract_size NUMERIC(18, 4) DEFAULT 100000,
-    pip_size NUMERIC(18, 6) DEFAULT 0.0001,
-    default_leverage INTEGER DEFAULT 100,
-    popular BOOLEAN DEFAULT TRUE,
-    is_custom BOOLEAN DEFAULT FALSE,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.market_instruments;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- RLS for market_instruments
-ALTER TABLE public.market_instruments ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.admin_settings;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-DROP POLICY IF EXISTS "Public can view market instruments" ON public.market_instruments;
-CREATE POLICY "Public can view market instruments" ON public.market_instruments
-    FOR SELECT USING (true);
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.positions;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-DROP POLICY IF EXISTS "Allow any user/admin to modify market instruments" ON public.market_instruments;
-CREATE POLICY "Allow any user/admin to modify market instruments" ON public.market_instruments
-    FOR ALL USING (true);
-
--- Seed Baseline Algorithmic Pairs
-INSERT INTO public.market_instruments (
-    symbol, name, asset_class, base_currency, quote_currency, digits, base_price, current_price, direction, strength, volatility, algorithm, spread, is_custom, is_active
-) VALUES
-    ('EUR/USD', 'Euro / US Dollar', 'FOREX', 'EUR', 'USD', 5, 1.08640, 1.08640, 'UP', 1.0, 0.00015, 'MOMENTUM', 0.00015, FALSE, TRUE),
-    ('GBP/USD', 'British Pound / US Dollar', 'FOREX', 'GBP', 'USD', 5, 1.29850, 1.29850, 'UP', 1.2, 0.00020, 'MOMENTUM', 0.00018, FALSE, TRUE),
-    ('USD/JPY', 'US Dollar / Japanese Yen', 'FOREX', 'USD', 'JPY', 3, 152.450, 152.450, 'DOWN', 1.0, 0.00030, 'MOMENTUM', 0.020, FALSE, TRUE),
-    ('AUD/USD', 'Australian Dollar / US Dollar', 'FOREX', 'AUD', 'USD', 5, 0.65820, 0.65820, 'UP', 0.9, 0.00020, 'MOMENTUM', 0.00018, FALSE, TRUE),
-    ('BTC/USDT', 'Bitcoin / Tether', 'CRYPTO', 'BTC', 'USDT', 2, 86450.00, 86450.00, 'UP', 1.5, 0.00080, 'MOMENTUM', 2.50, FALSE, TRUE),
-    ('ETH/USDT', 'Ethereum / Tether', 'CRYPTO', 'ETH', 'USDT', 2, 3180.50, 3180.50, 'UP', 1.4, 0.00090, 'MOMENTUM', 0.40, FALSE, TRUE),
-    ('SOL/USDT', 'Solana / Tether', 'CRYPTO', 'SOL', 'USDT', 2, 198.40, 198.40, 'UP', 1.8, 0.00120, 'MOMENTUM', 0.08, FALSE, TRUE),
-    ('XAU/USD', 'Gold / US Dollar', 'COMMODITIES', 'XAU', 'USD', 2, 2748.20, 2748.20, 'UP', 1.1, 0.00045, 'MOMENTUM', 0.35, FALSE, TRUE),
-    ('AAPL', 'Apple Inc.', 'STOCKS', 'USD', 'USD', 2, 234.80, 234.80, 'UP', 0.8, 0.00035, 'MOMENTUM', 0.05, FALSE, TRUE),
-    ('TSLA', 'Tesla, Inc.', 'STOCKS', 'USD', 'USD', 2, 218.40, 218.40, 'DOWN', 1.2, 0.00085, 'MOMENTUM', 0.08, FALSE, TRUE),
-    ('NVDA', 'NVIDIA Corporation', 'STOCKS', 'USD', 'USD', 2, 144.50, 144.50, 'UP', 1.6, 0.00095, 'MOMENTUM', 0.06, FALSE, TRUE)
-ON CONFLICT (symbol) DO UPDATE
-SET base_price = EXCLUDED.base_price,
-    current_price = EXCLUDED.current_price,
-    direction = EXCLUDED.direction;
-
--- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.market_instruments;
-
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.trading_accounts;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

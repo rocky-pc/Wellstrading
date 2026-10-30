@@ -167,4 +167,30 @@ export interface UserProfile {
   avatar_url?: string;
   country?: string;
   preferred_currency?: string;
+  role?: 'USER' | 'ADMIN' | 'SUPER_ADMIN';
+  is_admin?: boolean;
+}
+
+export interface AdminSettings {
+  id: string;
+  platform_name: string;
+  market_status: 'OPEN' | 'HALTED' | 'MAINTENANCE';
+  tick_interval_ms: number;
+  default_leverage: number;
+  demo_initial_balance: number;
+  allow_user_registration: boolean;
+  allow_custom_pairs: boolean;
+  global_drift_multiplier: number;
+  maintenance_message?: string;
+  updated_at: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  admin_id?: string;
+  admin_email?: string;
+  action: string;
+  target_symbol?: string;
+  details?: Record<string, any>;
+  created_at: string;
 }
