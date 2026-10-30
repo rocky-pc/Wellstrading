@@ -17,11 +17,6 @@ export const Footer: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
-          <Link to="/admin" className="hover:text-emerald-400 transition-colors flex items-center gap-1 font-semibold text-slate-300">
-            <Shield className="w-3 h-3 text-emerald-400" />
-            <span>Admin Controls</span>
-          </Link>
-          <span>•</span>
           <span>Frontend + Supabase</span>
           <span>•</span>
           <span>Virtual Paper Trading</span>

@@ -147,12 +147,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       });
       if (error) return { error };
-      if (data.user) {
-        setUser({
-          id: data.user.id,
-          email: data.user.email || '',
-          full_name: fullName,
+
+      // Instant sign-in without email or phone verification
+      if (!data.session) {
+        const loginRes = await supabase.auth.signInWithPassword({
+          email,
+          password: pass,
         });
+        if (loginRes.data.user) {
+          const profile = await fetchUserProfile(
+            loginRes.data.user.id,
+            loginRes.data.user.email || email,
+            fullName
+          );
+          setUser(profile);
+          return { error: null };
+        }
+      }
+
+      if (data.user) {
+        const profile = await fetchUserProfile(
+          data.user.id,
+          data.user.email || email,
+          fullName
+        );
+        setUser(profile);
       }
       return { error: null };
     } else {

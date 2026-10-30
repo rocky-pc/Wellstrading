@@ -17,7 +17,7 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const lastCandleRef = useRef<CandleData | null>(null);
-  const currentIntervalSecRef = useRef<number>(3600);
+  const currentIntervalSecRef = useRef<number>(60);
 
   const [timeframe, setTimeframe] = useState<Timeframe>('1m');
   const [loading, setLoading] = useState(true);
@@ -151,6 +151,10 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
       borderDownColor: '#ff4365',
       wickUpColor: '#00e599',
       wickDownColor: '#ff4365',
+      priceLineVisible: true,
+      lastValueVisible: true,
+      priceLineWidth: 1,
+      priceLineColor: '#38bdf8',
     });
 
     const volumeSeries = chart.addHistogramSeries({
@@ -222,53 +226,84 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
 
   // Real-time second-by-second live candle update with zero lag
   useEffect(() => {
-    if (!latestQuote || !candleSeriesRef.current || !lastCandleRef.current) return;
+    const handleTick = (newQuote: MarketQuote) => {
+      if (!candleSeriesRef.current || !lastCandleRef.current) return;
 
-    const currentPrice = latestQuote.price;
-    const nowSec = Math.floor(Date.now() / 1000);
-    const intervalSec = currentIntervalSecRef.current;
-    const currentBarStart = Math.floor(nowSec / intervalSec) * intervalSec;
+      const currentPrice = newQuote.price;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const intervalSec = currentIntervalSecRef.current;
+      const currentBarStart = Math.floor(nowSec / intervalSec) * intervalSec;
 
-    const last = lastCandleRef.current;
+      const last = lastCandleRef.current;
 
-    if (last.time === currentBarStart) {
-      // Update ongoing current candle
-      const updatedCandle: CandleData = {
-        ...last,
-        close: currentPrice,
-        high: Math.max(last.high, currentPrice),
-        low: Math.min(last.low, currentPrice),
-      };
-      lastCandleRef.current = updatedCandle;
+      if (last.time === currentBarStart) {
+        // Update ongoing current candle
+        const updatedCandle: CandleData = {
+          ...last,
+          close: currentPrice,
+          high: Math.max(last.high, currentPrice),
+          low: Math.min(last.low, currentPrice),
+          volume: (last.volume || 1) + 1,
+        };
+        lastCandleRef.current = updatedCandle;
 
-      candleSeriesRef.current.update({
-        time: updatedCandle.time as UTCTimestamp,
-        open: updatedCandle.open,
-        high: updatedCandle.high,
-        low: updatedCandle.low,
-        close: updatedCandle.close,
-      });
-    } else if (nowSec >= last.time + intervalSec) {
-      // New candle interval started! Create new candlestick bar
-      const newCandle: CandleData = {
-        time: currentBarStart,
-        open: currentPrice,
-        high: currentPrice,
-        low: currentPrice,
-        close: currentPrice,
-        volume: 1,
-      };
-      lastCandleRef.current = newCandle;
+        candleSeriesRef.current.update({
+          time: updatedCandle.time as UTCTimestamp,
+          open: updatedCandle.open,
+          high: updatedCandle.high,
+          low: updatedCandle.low,
+          close: updatedCandle.close,
+        });
 
-      candleSeriesRef.current.update({
-        time: newCandle.time as UTCTimestamp,
-        open: newCandle.open,
-        high: newCandle.high,
-        low: newCandle.low,
-        close: newCandle.close,
-      });
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.update({
+            time: updatedCandle.time as UTCTimestamp,
+            value: updatedCandle.volume || 1,
+            color: updatedCandle.close >= updatedCandle.open ? 'rgba(0, 229, 153, 0.35)' : 'rgba(255, 67, 101, 0.35)',
+          });
+        }
+      } else if (currentBarStart > last.time) {
+        // New candle interval started! Advance chart and create next candlestick bar
+        const newCandle: CandleData = {
+          time: currentBarStart,
+          open: last.close,
+          high: Math.max(last.close, currentPrice),
+          low: Math.min(last.close, currentPrice),
+          close: currentPrice,
+          volume: 1,
+        };
+        lastCandleRef.current = newCandle;
+
+        candleSeriesRef.current.update({
+          time: newCandle.time as UTCTimestamp,
+          open: newCandle.open,
+          high: newCandle.high,
+          low: newCandle.low,
+          close: newCandle.close,
+        });
+
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.update({
+            time: newCandle.time as UTCTimestamp,
+            value: 1,
+            color: newCandle.close >= newCandle.open ? 'rgba(0, 229, 153, 0.35)' : 'rgba(255, 67, 101, 0.35)',
+          });
+        }
+      }
+    };
+
+    // Direct high-frequency subscription ensures zero-latency 1s ticks without parent re-render lag
+    const unsubscribe = MarketDataService.subscribeQuote(symbol, handleTick);
+
+    // Also respond to latestQuote prop if passed
+    if (latestQuote) {
+      handleTick(latestQuote);
     }
-  }, [latestQuote]);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [symbol, timeframe, latestQuote]);
 
   const toggleFullscreen = () => {
     if (!chartContainerRef.current) return;

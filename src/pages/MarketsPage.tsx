@@ -91,18 +91,8 @@ export const MarketsPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-white">Market Pairs</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Predefined algorithmic quotes moving second-by-second. Controlled via Admin panel.
+            Real-time algorithmic trading pairs moving second-by-second with institutional execution.
           </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link
-            to="/admin"
-            className="px-3.5 py-2 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Admin Controls</span>
-          </Link>
         </div>
       </div>
 
