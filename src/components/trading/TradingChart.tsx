@@ -3,7 +3,7 @@ import { createChart, IChartApi, ISeriesApi, UTCTimestamp, CrosshairMode } from 
 import { CandleData, Instrument, MarketQuote, Timeframe } from '@/types';
 import { MarketDataService } from '@/services/marketData';
 import { formatPrice } from '@/lib/instruments';
-import { Clock, RefreshCw, Maximize2, Minimize2, Radio, AlertCircle } from 'lucide-react';
+import { RefreshCw, Maximize2, Minimize2, Radio, Activity } from 'lucide-react';
 
 interface Props {
   symbol: string;
@@ -17,8 +17,9 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const lastCandleRef = useRef<CandleData | null>(null);
+  const currentIntervalSecRef = useRef<number>(3600);
 
-  const [timeframe, setTimeframe] = useState<Timeframe>('1h');
+  const [timeframe, setTimeframe] = useState<Timeframe>('1m');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [crosshairInfo, setCrosshairInfo] = useState<{
@@ -31,14 +32,13 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
   } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Timeframe selector options
-  const timeframes: { label: string; value: Timeframe }[] = [
-    { label: '1m', value: '1m' },
-    { label: '5m', value: '5m' },
-    { label: '15m', value: '15m' },
-    { label: '1h', value: '1h' },
-    { label: '4h', value: '4h' },
-    { label: '1D', value: '1d' },
+  const timeframes: { label: string; value: Timeframe; sec: number }[] = [
+    { label: '1m', value: '1m', sec: 60 },
+    { label: '5m', value: '5m', sec: 300 },
+    { label: '15m', value: '15m', sec: 900 },
+    { label: '1h', value: '1h', sec: 3600 },
+    { label: '4h', value: '4h', sec: 14400 },
+    { label: '1D', value: '1d', sec: 86400 },
   ];
 
   // Fetch candle data and render chart
@@ -49,7 +49,7 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
       const candles = await MarketDataService.getCandles(symbol, timeframe);
 
       if (!candles || candles.length === 0) {
-        throw new Error(`No historical candles available for ${symbol} (${timeframe})`);
+        throw new Error(`No candle data for ${symbol}`);
       }
 
       if (candleSeriesRef.current && chartRef.current) {
@@ -67,7 +67,7 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
           const volumeData = candles.map((c) => ({
             time: c.time as UTCTimestamp,
             value: c.volume || 1,
-            color: c.close >= c.open ? 'rgba(0, 192, 118, 0.25)' : 'rgba(255, 77, 79, 0.25)',
+            color: c.close >= c.open ? 'rgba(0, 229, 153, 0.25)' : 'rgba(255, 67, 101, 0.25)',
           }));
           volumeSeriesRef.current.setData(volumeData);
         }
@@ -77,17 +77,25 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
       }
     } catch (err: any) {
       console.warn('Error loading candles:', err);
-      setError(err.message || 'Failed to fetch historical market data');
+      setError(err.message || 'Failed to fetch algorithmic market data');
     } finally {
       setLoading(false);
     }
   }, [symbol, timeframe]);
 
+  // Handle timeframe change
+  const handleTimeframeChange = (tf: Timeframe) => {
+    setTimeframe(tf);
+    const found = timeframes.find((t) => t.value === tf);
+    if (found) {
+      currentIntervalSecRef.current = found.sec;
+    }
+  };
+
   // Initialize Lightweight Chart
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Dispose old chart if exists
     if (chartRef.current) {
       chartRef.current.remove();
       chartRef.current = null;
@@ -97,22 +105,22 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
 
     const chart = createChart(container, {
       width: container.clientWidth,
-      height: container.clientHeight || 450,
+      height: container.clientHeight || 480,
       layout: {
-        background: { color: '#090e1a' },
-        textColor: '#94a3b8',
+        background: { color: '#070b14' },
+        textColor: '#64748b',
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'rgba(30, 41, 59, 0.5)' },
-        horzLines: { color: 'rgba(30, 41, 59, 0.5)' },
+        vertLines: { color: 'rgba(30, 41, 59, 0.35)' },
+        horzLines: { color: 'rgba(30, 41, 59, 0.35)' },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
           color: '#38bdf8',
           width: 1,
-          style: 3, // dashed
+          style: 3,
           labelBackgroundColor: '#0284c7',
         },
         horzLine: {
@@ -125,36 +133,36 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
       rightPriceScale: {
         borderColor: '#1e293b',
         scaleMargins: {
-          top: 0.1,
-          bottom: 0.2,
+          top: 0.08,
+          bottom: 0.18,
         },
       },
       timeScale: {
         borderColor: '#1e293b',
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: true,
       },
     });
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#00c076',
-      downColor: '#ff4d4f',
-      borderUpColor: '#00c076',
-      borderDownColor: '#ff4d4f',
-      wickUpColor: '#00c076',
-      wickDownColor: '#ff4d4f',
+      upColor: '#00e599',
+      downColor: '#ff4365',
+      borderUpColor: '#00e599',
+      borderDownColor: '#ff4365',
+      wickUpColor: '#00e599',
+      wickDownColor: '#ff4365',
     });
 
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: {
         type: 'volume',
       },
-      priceScaleId: '', // overlay
+      priceScaleId: '',
     });
 
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
-        top: 0.8,
+        top: 0.85,
         bottom: 0,
       },
     });
@@ -163,7 +171,6 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
     volumeSeriesRef.current = volumeSeries;
     chartRef.current = chart;
 
-    // Crosshair move subscription for header details
     chart.subscribeCrosshairMove((param) => {
       if (
         param.point === undefined ||
@@ -177,9 +184,10 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
       } else {
         const data = param.seriesData.get(candleSeries) as any;
         if (data) {
-          const dateStr = typeof param.time === 'number'
-            ? new Date(param.time * 1000).toLocaleString()
-            : String(param.time);
+          const dateStr =
+            typeof param.time === 'number'
+              ? new Date(param.time * 1000).toLocaleTimeString()
+              : String(param.time);
           const chg = data.close - data.open;
           setCrosshairInfo({
             open: data.open,
@@ -193,11 +201,10 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
       }
     });
 
-    // Handle Resize
     const resizeObserver = new ResizeObserver((entries) => {
       if (!entries || entries.length === 0 || !chartRef.current) return;
       const { width, height } = entries[0].contentRect;
-      chartRef.current.applyOptions({ width, height: height || 450 });
+      chartRef.current.applyOptions({ width, height: height || 480 });
     });
 
     resizeObserver.observe(container);
@@ -213,29 +220,54 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
     };
   }, [symbol, timeframe, loadCandleData]);
 
-  // Live update the latest candle when a real-time quote arrives
+  // Real-time second-by-second live candle update with zero lag
   useEffect(() => {
     if (!latestQuote || !candleSeriesRef.current || !lastCandleRef.current) return;
 
     const currentPrice = latestQuote.price;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const intervalSec = currentIntervalSecRef.current;
+    const currentBarStart = Math.floor(nowSec / intervalSec) * intervalSec;
+
     const last = lastCandleRef.current;
 
-    const updatedCandle: CandleData = {
-      ...last,
-      close: currentPrice,
-      high: Math.max(last.high, currentPrice),
-      low: Math.min(last.low, currentPrice),
-    };
+    if (last.time === currentBarStart) {
+      // Update ongoing current candle
+      const updatedCandle: CandleData = {
+        ...last,
+        close: currentPrice,
+        high: Math.max(last.high, currentPrice),
+        low: Math.min(last.low, currentPrice),
+      };
+      lastCandleRef.current = updatedCandle;
 
-    lastCandleRef.current = updatedCandle;
+      candleSeriesRef.current.update({
+        time: updatedCandle.time as UTCTimestamp,
+        open: updatedCandle.open,
+        high: updatedCandle.high,
+        low: updatedCandle.low,
+        close: updatedCandle.close,
+      });
+    } else if (nowSec >= last.time + intervalSec) {
+      // New candle interval started! Create new candlestick bar
+      const newCandle: CandleData = {
+        time: currentBarStart,
+        open: currentPrice,
+        high: currentPrice,
+        low: currentPrice,
+        close: currentPrice,
+        volume: 1,
+      };
+      lastCandleRef.current = newCandle;
 
-    candleSeriesRef.current.update({
-      time: updatedCandle.time as UTCTimestamp,
-      open: updatedCandle.open,
-      high: updatedCandle.high,
-      low: updatedCandle.low,
-      close: updatedCandle.close,
-    });
+      candleSeriesRef.current.update({
+        time: newCandle.time as UTCTimestamp,
+        open: newCandle.open,
+        high: newCandle.high,
+        low: newCandle.low,
+        close: newCandle.close,
+      });
+    }
   }, [latestQuote]);
 
   const toggleFullscreen = () => {
@@ -253,15 +285,15 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
   };
 
   return (
-    <div className="relative flex flex-col w-full h-full bg-[#090e1a] rounded-xl border border-slate-800/80 overflow-hidden">
-      {/* Chart Toolbar */}
-      <div className="flex flex-wrap items-center justify-between px-3 py-2 border-b border-slate-800/80 bg-[#070b14]/80 text-xs gap-2">
-        {/* Timeframe selector */}
-        <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-slate-800">
+    <div className="relative flex flex-col w-full h-full bg-[#070b14] rounded-xl border border-slate-800/80 overflow-hidden">
+      {/* Minimalist Toolbar */}
+      <div className="flex flex-wrap items-center justify-between px-3 py-2 border-b border-slate-800/80 bg-[#090e1a]/90 text-xs gap-2">
+        {/* Timeframe Switcher */}
+        <div className="flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-slate-800">
           {timeframes.map((tf) => (
             <button
               key={tf.value}
-              onClick={() => setTimeframe(tf.value)}
+              onClick={() => handleTimeframeChange(tf.value)}
               className={`px-2.5 py-1 rounded-md font-mono text-xs transition-colors ${
                 timeframe === tf.value
                   ? 'bg-emerald-500 text-slate-950 font-bold shadow'
@@ -273,7 +305,7 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
           ))}
         </div>
 
-        {/* Crosshair live OHLC preview */}
+        {/* OHLC Bar Stats */}
         {crosshairInfo ? (
           <div className="hidden sm:flex items-center gap-3 font-mono text-[11px] text-slate-300">
             <span>
@@ -313,24 +345,13 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
           </div>
         ) : null}
 
-        {/* Data Provider & Status */}
+        {/* Status & Actions */}
         <div className="flex items-center gap-2">
-          {instrument.provider === 'BINANCE' ? (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-medium border border-emerald-500/20">
-              <Radio className="w-3 h-3 animate-pulse" />
-              <span>Binance Live Stream</span>
-            </div>
-          ) : latestQuote?.isMarketOpen ? (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-medium border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-              <span>Twelve Data Live</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-medium border border-amber-500/20">
-              <Clock className="w-3 h-3" />
-              <span>Twelve Data (Market Closed)</span>
-            </div>
-          )}
+          {/* Synchronized 1-sec algorithmic engine badge */}
+          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-semibold border border-emerald-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+            <span>Algorithmic Live 1s</span>
+          </div>
 
           <button
             onClick={loadCandleData}
@@ -342,7 +363,7 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
 
           <button
             onClick={toggleFullscreen}
-            title="Fullscreen"
+            title="Toggle Fullscreen"
             className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -350,40 +371,21 @@ export const TradingChart: React.FC<Props> = ({ symbol, instrument, latestQuote 
         </div>
       </div>
 
-      {/* Main Chart Canvas Container */}
-      <div className="relative flex-1 w-full min-h-[420px]" ref={chartContainerRef}>
-        {/* Loading Overlay */}
+      {/* Chart Canvas */}
+      <div className="relative flex-1 w-full min-h-[440px]" ref={chartContainerRef}>
         {loading && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#090e1a]/70 backdrop-blur-[2px]">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#070b14]/70 backdrop-blur-[2px]">
             <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mb-2" />
             <span className="text-xs text-slate-300 font-medium">
-              Loading {symbol} OHLC Candlesticks...
+              Generating {symbol} Chart Stream...
             </span>
           </div>
         )}
 
-        {/* Error State */}
-        {error && !loading && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center bg-[#090e1a]/90">
-            <AlertCircle className="w-10 h-10 text-amber-400 mb-3" />
-            <h4 className="text-sm font-semibold text-slate-200 mb-1">Chart Data Temporarily Unavailable</h4>
-            <p className="text-xs text-slate-400 max-w-md mb-4">{error}</p>
-            <button
-              onClick={loadCandleData}
-              className="px-4 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition-colors"
-            >
-              Retry Connection
-            </button>
-          </div>
-        )}
-
-        {/* Watermark Logo */}
-        <div className="absolute bottom-6 left-6 pointer-events-none z-10 select-none opacity-10">
-          <div className="text-6xl font-black tracking-widest text-slate-100 uppercase">
+        {/* Subtle Watermark */}
+        <div className="absolute bottom-6 left-6 pointer-events-none z-10 select-none opacity-5">
+          <div className="text-7xl font-black tracking-widest text-white uppercase">
             {symbol.replace('/', '')}
-          </div>
-          <div className="text-sm tracking-wider text-emerald-400 font-bold">
-            WELLSTRADING TERMINAL
           </div>
         </div>
       </div>

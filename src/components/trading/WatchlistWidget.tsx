@@ -16,10 +16,21 @@ export const WatchlistWidget: React.FC<Props> = ({ activeSymbol, onSelectSymbol 
   const { watchlist, toggleWatchlist, isInWatchlist } = useTrading();
   const [filter, setFilter] = useState<'ALL' | 'FAVORITES' | AssetClass>('ALL');
   const [search, setSearch] = useState('');
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({});
 
+  useEffect(() => {
+    setInstruments(MarketDataService.getAllInstruments());
+    const unsubscribe = MarketDataService.subscribeAll((newQuotes) => {
+      setQuotes((prev) => ({ ...prev, ...newQuotes }));
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Filter instruments
-  const displayed = INSTRUMENTS.filter((inst) => {
+  const displayed = instruments.filter((inst) => {
     const matchesSearch =
       inst.symbol.toLowerCase().includes(search.toLowerCase()) ||
       inst.name.toLowerCase().includes(search.toLowerCase());
@@ -30,21 +41,6 @@ export const WatchlistWidget: React.FC<Props> = ({ activeSymbol, onSelectSymbol 
     if (filter === 'ALL') return true;
     return inst.assetClass === filter;
   });
-
-  // Fetch initial quotes for displayed items
-  useEffect(() => {
-    const fetchSampleQuotes = async () => {
-      for (const inst of displayed.slice(0, 10)) {
-        try {
-          const q = await MarketDataService.getQuote(inst.symbol);
-          setQuotes((prev) => ({ ...prev, [inst.symbol]: q }));
-        } catch {
-          // ignore
-        }
-      }
-    };
-    fetchSampleQuotes();
-  }, [filter, search]);
 
   const handleSelect = (symbol: string) => {
     if (onSelectSymbol) {

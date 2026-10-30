@@ -229,6 +229,16 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     loadUserData();
   }, [loadUserData]);
 
+  // Subscribe to real-time 1-second price ticks for all algorithmic instruments
+  useEffect(() => {
+    const unsubscribe = MarketDataService.subscribeAll((newQuotes) => {
+      setQuotes((prev) => ({ ...prev, ...newQuotes }));
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Update quote helper
   const updateQuote = useCallback((quote: MarketQuote) => {
     setQuotes((prev) => ({

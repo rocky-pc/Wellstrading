@@ -11,31 +11,29 @@ interface Props {
 
 export const InstrumentSearchModal: React.FC<Props> = ({ onClose }) => {
   const navigate = useNavigate();
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'ALL' | 'FOREX' | 'CRYPTO' | 'STOCKS' | 'COMMODITIES'>('ALL');
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({});
 
+  useEffect(() => {
+    setInstruments(MarketDataService.getAllInstruments());
+    const unsubscribe = MarketDataService.subscribeAll((newQuotes) => {
+      setQuotes((prev) => ({ ...prev, ...newQuotes }));
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Filter instruments
-  const filtered = INSTRUMENTS.filter((inst) => {
+  const filtered = instruments.filter((inst) => {
     const matchesTab = activeTab === 'ALL' || inst.assetClass === activeTab;
     const matchesQuery =
       inst.symbol.toLowerCase().includes(query.toLowerCase()) ||
       inst.name.toLowerCase().includes(query.toLowerCase());
     return matchesTab && matchesQuery;
   });
-
-  // Pre-fetch quotes for top 8 filtered instruments
-  useEffect(() => {
-    const sample = filtered.slice(0, 8);
-    sample.forEach(async (inst) => {
-      try {
-        const q = await MarketDataService.getQuote(inst.symbol);
-        setQuotes((prev) => ({ ...prev, [inst.symbol]: q }));
-      } catch {
-        // ignore
-      }
-    });
-  }, [filtered.length, activeTab]);
 
   // Handle keyboard ESC to close
   useEffect(() => {
@@ -125,8 +123,10 @@ export const InstrumentSearchModal: React.FC<Props> = ({ onClose }) => {
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60">
                           {inst.assetClass}
                         </span>
-                        <span className="text-[10px] px-1 py-0.5 rounded text-slate-500">
-                          {inst.provider === 'BINANCE' ? 'Binance' : 'Twelve Data'}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                          inst.direction === 'UP' ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'
+                        }`}>
+                          {inst.direction === 'UP' ? '▲ UP' : '▼ DOWN'}
                         </span>
                       </div>
                       <span className="text-xs text-slate-400 truncate max-w-xs">{inst.name}</span>

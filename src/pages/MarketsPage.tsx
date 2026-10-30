@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { INSTRUMENTS, formatPrice } from '@/lib/instruments';
-import { AssetClass, MarketQuote } from '@/types';
+import { formatPrice } from '@/lib/instruments';
+import { AssetClass, MarketQuote, Instrument } from '@/types';
 import { MarketDataService } from '@/services/marketData';
 import { useTrading } from '@/context/TradingContext';
 import {
@@ -10,76 +10,62 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowRight,
-  Filter,
   ArrowUpDown,
-  Radio,
-  Clock,
-  Layers,
+  Shield,
+  Plus,
 } from 'lucide-react';
 
 export const MarketsPage: React.FC = () => {
   const { isInWatchlist, toggleWatchlist } = useTrading();
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [activeTab, setActiveTab] = useState<'ALL' | AssetClass>('ALL');
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState<'symbol' | 'change' | 'price'>('change');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<'symbol' | 'change' | 'price'>('symbol');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({});
-  const [loading, setLoading] = useState(false);
 
-  // Fetch quotes for all instruments in parallel
   useEffect(() => {
-    let isMounted = true;
-    setLoading(true);
+    setInstruments(MarketDataService.getAllInstruments());
 
-    const loadAllQuotes = async () => {
-      // First 12 instruments
-      for (const inst of INSTRUMENTS) {
-        try {
-          const q = await MarketDataService.getQuote(inst.symbol);
-          if (isMounted) {
-            setQuotes((prev) => ({ ...prev, [inst.symbol]: q }));
-          }
-        } catch {
-          // ignore
-        }
-      }
-      if (isMounted) setLoading(false);
-    };
+    // Subscribe to live 1s algorithmic stream
+    const unsubscribe = MarketDataService.subscribeAll((newQuotes) => {
+      setQuotes((prev) => ({ ...prev, ...newQuotes }));
+    });
 
-    loadAllQuotes();
     return () => {
-      isMounted = false;
+      unsubscribe();
     };
   }, []);
 
-  // Filter & sort
-  const filteredInstruments = INSTRUMENTS.filter((inst) => {
-    const matchesTab = activeTab === 'ALL' || inst.assetClass === activeTab;
-    const matchesSearch =
-      inst.symbol.toLowerCase().includes(search.toLowerCase()) ||
-      inst.name.toLowerCase().includes(search.toLowerCase());
-    return matchesTab && matchesSearch;
-  }).sort((a, b) => {
-    const quoteA = quotes[a.symbol];
-    const quoteB = quotes[b.symbol];
+  const filteredInstruments = instruments
+    .filter((inst) => {
+      const matchesTab = activeTab === 'ALL' || inst.assetClass === activeTab;
+      const matchesSearch =
+        inst.symbol.toLowerCase().includes(search.toLowerCase()) ||
+        inst.name.toLowerCase().includes(search.toLowerCase());
+      return matchesTab && matchesSearch;
+    })
+    .sort((a, b) => {
+      const quoteA = quotes[a.symbol];
+      const quoteB = quotes[b.symbol];
 
-    if (sortBy === 'symbol') {
-      return sortOrder === 'asc'
-        ? a.symbol.localeCompare(b.symbol)
-        : b.symbol.localeCompare(a.symbol);
-    }
-    if (sortBy === 'price') {
-      const priceA = quoteA?.price || 0;
-      const priceB = quoteB?.price || 0;
-      return sortOrder === 'asc' ? priceA - priceB : priceB - priceA;
-    }
-    if (sortBy === 'change') {
-      const chgA = quoteA?.changePercent24h || 0;
-      const chgB = quoteB?.changePercent24h || 0;
-      return sortOrder === 'asc' ? chgA - chgB : chgB - chgA;
-    }
-    return 0;
-  });
+      if (sortBy === 'symbol') {
+        return sortOrder === 'asc'
+          ? a.symbol.localeCompare(b.symbol)
+          : b.symbol.localeCompare(a.symbol);
+      }
+      if (sortBy === 'price') {
+        const priceA = quoteA?.price || a.currentPrice || 0;
+        const priceB = quoteB?.price || b.currentPrice || 0;
+        return sortOrder === 'asc' ? priceA - priceB : priceB - priceA;
+      }
+      if (sortBy === 'change') {
+        const chgA = quoteA?.changePercent24h || 0;
+        const chgB = quoteB?.changePercent24h || 0;
+        return sortOrder === 'asc' ? chgA - chgB : chgB - chgA;
+      }
+      return 0;
+    });
 
   const toggleSort = (type: 'symbol' | 'change' | 'price') => {
     if (sortBy === type) {
@@ -91,39 +77,32 @@ export const MarketsPage: React.FC = () => {
   };
 
   const tabs: { label: string; value: 'ALL' | AssetClass }[] = [
-    { label: 'All Markets', value: 'ALL' },
-    { label: 'Forex Pairs', value: 'FOREX' },
+    { label: 'All Pairs', value: 'ALL' },
+    { label: 'Forex', value: 'FOREX' },
     { label: 'Crypto', value: 'CRYPTO' },
     { label: 'Stocks', value: 'STOCKS' },
-    { label: 'Precious Metals', value: 'COMMODITIES' },
-    { label: 'Indices', value: 'INDICES' },
+    { label: 'Metals', value: 'COMMODITIES' },
   ];
 
   return (
-    <div className="flex-1 space-y-6 p-4 md:p-8 max-w-7xl mx-auto w-full">
+    <div className="flex-1 space-y-6 p-4 md:p-8 max-w-7xl mx-auto w-full font-sans">
       {/* Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-4">
         <div>
-          <h1 className="text-2xl font-black text-white">Market Explorer</h1>
+          <h1 className="text-2xl font-black text-white">Market Pairs</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Real-time financial asset quotes across global exchanges and public market streams.
+            Predefined algorithmic quotes moving second-by-second. Controlled via Admin panel.
           </p>
         </div>
 
-        {/* Summary counter pills */}
-        <div className="flex items-center gap-2 text-xs font-mono">
-          <div className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
-            <span className="text-slate-500 mr-1.5">Instruments:</span>
-            <b className="text-white">{INSTRUMENTS.length}</b>
-          </div>
-          <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-            <span className="mr-1.5">Forex:</span>
-            <b>6</b>
-          </div>
-          <div className="px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
-            <span className="mr-1.5">Crypto:</span>
-            <b>5</b>
-          </div>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/admin"
+            className="px-3.5 py-2 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Admin Controls</span>
+          </Link>
         </div>
       </div>
 
@@ -137,7 +116,7 @@ export const MarketsPage: React.FC = () => {
               onClick={() => setActiveTab(tab.value)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
                 activeTab === tab.value
-                  ? 'bg-emerald-500 text-slate-950 shadow'
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
@@ -151,7 +130,7 @@ export const MarketsPage: React.FC = () => {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Search symbol or name..."
+            placeholder="Search pair or symbol..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full h-9 pl-9 pr-3 text-xs bg-slate-900 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
@@ -176,13 +155,12 @@ export const MarketsPage: React.FC = () => {
                   </div>
                 </th>
                 <th className="py-3 px-4">Class</th>
-                <th className="py-3 px-4">Provider</th>
                 <th
                   onClick={() => toggleSort('price')}
                   className="py-3 px-4 cursor-pointer hover:text-slate-200 select-none"
                 >
                   <div className="flex items-center gap-1">
-                    <span>Price</span>
+                    <span>Live Price (1s)</span>
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
@@ -195,16 +173,17 @@ export const MarketsPage: React.FC = () => {
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="py-3 px-4">24h High / Low</th>
+                <th className="py-3 px-4">Admin Trajectory</th>
                 <th className="py-3 px-4">Leverage</th>
-                <th className="py-3 px-4 text-right">Action</th>
+                <th className="py-3 px-4 text-right">Trade</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-800/60 font-sans">
               {filteredInstruments.map((inst) => {
                 const quote = quotes[inst.symbol];
+                const curPrice = quote ? quote.price : inst.currentPrice;
+                const isUp = quote ? quote.changePercent24h >= 0 : true;
                 const isFavorite = isInWatchlist(inst.symbol);
-                const isPositive = quote ? quote.changePercent24h >= 0 : true;
 
                 return (
                   <tr
@@ -214,7 +193,7 @@ export const MarketsPage: React.FC = () => {
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={() => toggleWatchlist(inst.symbol)}
-                        className="text-slate-600 hover:text-amber-400 p-1"
+                        className="text-slate-600 hover:text-amber-400 transition-colors p-1"
                       >
                         <Star
                           className={`w-3.5 h-3.5 ${
@@ -225,67 +204,70 @@ export const MarketsPage: React.FC = () => {
                     </td>
 
                     <td className="py-3 px-4">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-100 text-sm">{inst.symbol}</span>
-                        <span className="text-[11px] text-slate-400 font-sans">{inst.name}</span>
-                      </div>
+                      <Link
+                        to={`/trade/${inst.symbol.replace('/', '-')}`}
+                        className="flex items-center gap-2 group-hover:text-emerald-400 transition-colors"
+                      >
+                        <div>
+                          <div className="font-extrabold text-white flex items-center gap-1.5">
+                            <span>{inst.symbol}</span>
+                            {inst.isCustom && (
+                              <span className="text-[9px] px-1 py-0.2 rounded font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                CUSTOM
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-sans">{inst.name}</div>
+                        </div>
+                      </Link>
                     </td>
 
                     <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700/60">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
                         {inst.assetClass}
                       </span>
                     </td>
 
-                    <td className="py-3 px-4 font-sans text-slate-400">
-                      {inst.provider === 'BINANCE' ? (
-                        <div className="flex items-center gap-1 text-emerald-400">
-                          <Radio className="w-3 h-3 animate-pulse" />
-                          <span>Binance Public</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 text-slate-400">
-                          <Clock className="w-3 h-3 text-slate-500" />
-                          <span>Twelve Data</span>
-                        </div>
-                      )}
+                    <td className="py-3 px-4 font-mono font-bold text-white text-sm">
+                      {formatPrice(curPrice, inst.digits)}
                     </td>
 
-                    <td className="py-3 px-4 font-bold text-slate-100 text-sm">
-                      {quote ? formatPrice(quote.price, inst.digits) : '---'}
-                    </td>
-
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold ${
-                          isPositive
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                    <td className="py-3 px-4 font-mono">
+                      <div
+                        className={`flex items-center gap-1 font-semibold ${
+                          isUp ? 'text-emerald-400' : 'text-rose-400'
                         }`}
                       >
-                        {isPositive ? (
-                          <TrendingUp className="w-3 h-3" />
-                        ) : (
-                          <TrendingDown className="w-3 h-3" />
-                        )}
+                        {isUp ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                         <span>
-                          {isPositive ? '+' : ''}
+                          {isUp ? '+' : ''}
                           {quote ? quote.changePercent24h.toFixed(2) : '0.00'}%
                         </span>
+                      </div>
+                    </td>
+
+                    <td className="py-3 px-4 font-mono text-[11px]">
+                      <span
+                        className={`px-2 py-0.5 rounded font-bold ${
+                          inst.direction === 'UP'
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                            : inst.direction === 'DOWN'
+                            ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                            : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        {inst.direction === 'UP' ? '▲ BULLISH' : inst.direction === 'DOWN' ? '▼ BEARISH' : '— FLAT'}
                       </span>
                     </td>
 
-                    <td className="py-3 px-4 text-slate-400 text-[11px]">
-                      <div>H: {quote ? formatPrice(quote.high24h, inst.digits) : '---'}</div>
-                      <div>L: {quote ? formatPrice(quote.low24h, inst.digits) : '---'}</div>
+                    <td className="py-3 px-4 font-mono text-slate-400">
+                      1:{inst.defaultLeverage}
                     </td>
-
-                    <td className="py-3 px-4 text-slate-300">1:{inst.defaultLeverage}</td>
 
                     <td className="py-3 px-4 text-right">
                       <Link
                         to={`/trade/${inst.symbol.replace('/', '-')}`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 font-bold transition-all text-xs"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold text-xs transition-colors border border-emerald-500/20"
                       >
                         <span>Trade</span>
                         <ArrowRight className="w-3 h-3" />

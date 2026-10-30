@@ -117,35 +117,21 @@ export const SettingsPage: React.FC = () => {
       <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4 shadow-xl">
         <div className="flex items-center gap-2 text-sm font-bold text-white">
           <Server className="w-4 h-4 text-sky-400" />
-          <span>Market Data &amp; Serverless Infrastructure</span>
+          <span>Market Engine &amp; Supabase Infrastructure</span>
         </div>
 
         <div className="divide-y divide-slate-800 text-xs">
-          {/* Twelve Data */}
+          {/* Predefined Algorithmic Engine */}
           <div className="py-3 flex items-center justify-between">
             <div className="space-y-0.5">
-              <div className="font-semibold text-slate-200">Provider A: Twelve Data API</div>
+              <div className="font-semibold text-slate-200">Predefined Algorithmic Market Engine</div>
               <div className="text-[11px] text-slate-500">
-                Forex pairs, US stocks, indices, precious metals &amp; historical candles.
+                Low-latency 1s synchronized ticks, admin-defined trajectories (UP/DOWN/TARGETS), customized currency pairs.
               </div>
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-medium font-mono">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Configured &amp; Active</span>
-            </div>
-          </div>
-
-          {/* Binance */}
-          <div className="py-3 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="font-semibold text-slate-200">Provider B: Binance Public Market Data</div>
-              <div className="text-[11px] text-slate-500">
-                Cryptocurrency pairs, 24hr tickers, historical klines &amp; live WebSocket streams.
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-medium font-mono">
-              <Radio className="w-3.5 h-3.5 animate-pulse" />
-              <span>Public Stream Online</span>
+              <span>Active (1000ms Loop)</span>
             </div>
           </div>
 
@@ -154,7 +140,7 @@ export const SettingsPage: React.FC = () => {
             <div className="space-y-0.5">
               <div className="font-semibold text-slate-200">Database &amp; Auth: Supabase PostgreSQL</div>
               <div className="text-[11px] text-slate-500">
-                Managed authentication, Row Level Security, and atomic paper trading stored procedures.
+                Managed authentication, Row Level Security, market instruments storage, and atomic paper trading stored procedures.
               </div>
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-400 text-[11px] font-medium font-mono">

@@ -1,152 +1,70 @@
-# WellsTrading — XM-Inspired Serverless Online Trading Platform
+# WellsTrading — Minimalist Algorithmic Trading Platform
 
-WellsTrading is a high-performance, responsive online paper trading platform inspired by XM's user experience, featuring original branding, professional dark terminal styling, and a 100% serverless cloud architecture.
+WellsTrading is a high-performance, minimalist online trading terminal with **predefined algorithmic charts**, low-latency second-by-second live movements, customized currency pair creation, and an intuitive **Admin Control Panel**.
+
+**Architecture:** Pure User Frontend (React + Vite + TypeScript + Lightweight Charts) + Supabase for data (PostgreSQL, Realtime, and Paper Trading RPCs). **No PHP, no external API links, and no backend servers required.**
 
 ---
 
-## 1. Architectural Highlights
+## 1. Key Architectural Features
 
-- **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS
-- **Interactive Charts:** TradingView Lightweight Charts (`lightweight-charts`) with real OHLC candlesticks, volume histogram, timeframe selectors (1m, 5m, 15m, 1h, 4h, 1d), crosshairs, and live tick updates.
-- **Backend & Database:** Supabase PostgreSQL with strict Row Level Security (RLS) and atomic server-side stored functions (RPC).
-- **Serverless API / Edge Functions:**
-  - Vercel Serverless Edge Function (`api/twelve-data.ts`) and Supabase Edge Function (`supabase/functions/twelve-data/index.ts`) for secure proxying of Twelve Data API keys.
-  - No secret keys are ever exposed in client JavaScript or `VITE_` variables.
-- **Market Data Feeds:**
-  - **Provider A (Twelve Data):** Supported Forex (`EUR/USD`, `GBP/USD`, `USD/JPY`), US Stocks (`AAPL`, `TSLA`, `NVDA`, `MSFT`), Precious Metals (`XAU/USD`), and Indices (`SPX`).
-  - **Provider B (Binance Public API):** Cryptocurrency pairs (`BTCUSDT`, `ETHUSDT`, `SOLUSDT`, etc.) with direct frontend REST requests and sub-second WebSockets (`wss://stream.binance.com:9443`).
-- **Hosting & Infrastructure:** 100% Serverless on Vercel. **No VPS, no traditional Node.js backend server, no Docker.**
+- **Predefined Algorithmic Market Engine:**
+  - Removed all third-party market data links (no Twelve Data, no Binance external dependencies or rate limits).
+  - Deterministic time-synchronized price formula: every user viewing the chart at second $t$ sees the exact same candlesticks and ticks.
+  - Low-latency 1-second (`1000ms`) real-time tick loop updating live candlestick highs, lows, and closes.
+  - Multi-timeframe historical candlestick generation (`1m`, `5m`, `15m`, `1h`, `4h`, `1d`) that smoothly leads directly into live second-by-second updates.
+- **Admin Control Panel (`/admin`):**
+  - **Directional Trajectory Control:** Set pairs to move **UP** (Bullish rally), **DOWN** (Bearish slide), or **FLAT** (Consolidation).
+  - **Target Price Seeker:** Specify a target price (e.g. set EUR/USD to 1.1500) and watch the chart smoothly seek the target second-by-second.
+  - **Instant Market Shocks:** Trigger **+3% Rally** (PUMP) or **-3% Flash Dip** (DUMP) with one click.
+  - **Customized Currency Pair Creator:** Create any custom pair (e.g. `WELLS/USD`, `VIP/USDT`, `SOL/EUR`) with custom base price, decimal precision, volatility jitter, and directional trend.
+  - Changes are persisted in Supabase (`market_instruments`) and broadcast live across all user sessions in real time.
+- **Minimalist UI:**
+  - Dark OLED minimalist interface (`#070b14`), distraction-free, zero clutter.
+  - Fast pair switcher dropdown right on the terminal top bar with live flashing prices.
+  - 1-click execution order ticket with lot selection chips (`0.01`, `0.10`, `0.50`, `1.00`, `5.00`), Stop Loss / Take Profit protection, and margin calculation.
+  - Real-time Open Positions table with 1s live P&L updates and instant close buttons.
 
 ---
 
 ## 2. Platform Routes
 
-- `/` — Institutional landing page with live ticker marquee, terminal teaser, and asset explorer.
-- `/login` — User authentication with Supabase and 1-Click Instant Demo Login.
-- `/signup` — Registration with automatic $10,000 USD virtual credit provisioning.
-- `/dashboard` — Portfolio equity, balance, margin levels, win rate, and recent activity.
-- `/markets` — Comprehensive market explorer with asset filters, search, and sorting.
-- `/trade/:symbol` — Pro trading terminal with TradingView charts, XM-style dual execution tickets, depth tape, and positions table.
-- `/positions` — Dedicated open positions manager with live unrealized P/L and position closing.
-- `/history` — Audit log of closed trades, order executions, and balance transactions.
-- `/watchlist` — Favorite instruments manager.
-- `/settings` — Profile settings, virtual balance reset ($10,000 USD), and API diagnostics.
+- `/trade/:symbol` — Minimalist pro trading terminal with Lightweight Charts and 1-click execution.
+- `/admin` — Admin Market Control Panel for setting UP/DOWN trajectories, creating custom pairs, and setting targets.
+- `/markets` — Minimalist catalog of all active pairs and trends.
+- `/positions` — Dedicated open positions manager.
+- `/history` — Closed trade history and order log.
+- `/dashboard` — Portfolio balance, equity, and win rate.
+- `/login` & `/signup` — Authentication with automatic $10,000 USD virtual credit provisioning.
 
 ---
 
-## 3. Environment Configuration
+## 3. Supabase Setup
 
-Copy `.env.example` to `.env`:
+WellsTrading uses Supabase for persistent data, real-time broadcasts, and paper-trading database transactions:
+
+1. Open your [Supabase Dashboard](https://supabase.com).
+2. Go to **SQL Editor** -> **New Query**.
+3. Copy and run the script in [supabase/schema.sql](supabase/schema.sql).
+4. In your `.env` file, set:
+   ```env
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+> **Offline / Local Demo Mode:** If Supabase is not configured yet, WellsTrading automatically engages its local browser engine with `BroadcastChannel` synchronization so everything works immediately out-of-the-box!
+
+---
+
+## 4. Local Development
 
 ```bash
-cp .env.example .env
-```
-
-Set your environment variables:
-
-```env
-# Supabase Client Configuration (Public / Safe for browser)
-VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-# Server-Side Private Secret (PROTECTED - Vercel Serverless / Supabase Edge Functions only)
-# Never expose with VITE_ prefix
-TWELVE_DATA_API_KEY=ea779f93ae4044cc90d1de33ef0936f6
-```
-
-> **Note on Offline / Local Demo Mode:** If Supabase is not yet configured, WellsTrading automatically engages its built-in browser-based demo engine. All paper trading features, balances, orders, and positions work immediately out-of-the-box.
-
----
-
-## 4. Supabase Database & Security Setup
-
-WellsTrading uses Supabase for authentication, PostgreSQL persistent storage, and server-side transaction safety.
-
-### Setup Instructions
-
-1. Log into your [Supabase Dashboard](https://supabase.com).
-2. Create a new project (or select an existing one).
-3. Navigate to **SQL Editor** -> **New Query**.
-4. Open [supabase/schema.sql](supabase/schema.sql) in this repository, paste the entire contents into the SQL Editor, and click **Run**.
-
-### Schema Summary
-
-- `profiles` — User profile, display name, and preferences.
-- `trading_accounts` — Virtual balance ($10,000.00 USD), equity, margin used, free margin, and leverage (1:100).
-- `watchlists` & `watchlist_items` — Favorite instruments per user.
-- `orders` — Audit trail of pending, filled, and cancelled orders.
-- `positions` — Open positions with entry price, current price, stop loss, take profit, and margin.
-- `trades` — Closed positions ledger with realized P/L.
-- `balance_transactions` — Historical credits, resets, and trade P/L adjustments.
-
-### Row Level Security (RLS)
-
-All tables enforce Row Level Security:
-- `auth.uid() = user_id` prevents unauthorized access across users.
-- Browser clients cannot directly edit balances, margins, or mark trades as executed.
-
-### Trusted Database Stored Procedures (RPC)
-
-1. `handle_new_user()` — Trigger fired on user registration to automatically create a profile, generate a unique trading account number (`WT-XXXXXX`), fund it with $10,000 USD virtual credit, and populate default watchlist items.
-2. `execute_market_order(...)` — Validates available free margin, calculates required margin based on leverage, atomically creates the order, opens the position, and deducts margin.
-3. `close_position(...)` — Computes realized P/L based on market price, releases margin, credits/debits the account balance, archives the trade, and logs the balance transaction.
-4. `reset_demo_balance()` — Atomically resets virtual balance to $10,000.00 USD and closes any remaining open positions.
-
----
-
-## 5. Local Development
-
-Install dependencies and start the Vite development server:
-
-```bash
-# Using pnpm (recommended)
-pnpm install
-pnpm dev
-
-# Or using npm
+# Install dependencies
 npm install
+
+# Start Vite dev server
 npm run dev
+
+# Build for production
+npm run build
 ```
-
-Visit `http://localhost:5173` to explore the terminal.
-
-### Production Build Verification
-
-```bash
-pnpm build
-```
-
----
-
-## 6. Vercel Deployment Instructions
-
-WellsTrading is fully prepared for one-click deployment on Vercel:
-
-1. Push your repository to **GitHub**.
-2. Go to the [Vercel Dashboard](https://vercel.com/new) and click **Add New Project**.
-3. Import your `wellstrading` repository.
-4. Configure Project Settings:
-   - **Framework Preset:** Vite
-   - **Build Command:** `pnpm build` (or `npm run build`)
-   - **Output Directory:** `dist`
-5. Under **Environment Variables**, add:
-   - `TWELVE_DATA_API_KEY` = `ea779f93ae4044cc90d1de33ef0936f6` (Server-side secret, NOT exposed to client)
-   - `VITE_SUPABASE_URL` = `https://<your-project>.supabase.co`
-   - `VITE_SUPABASE_ANON_KEY` = `<your-supabase-anon-key>`
-6. Click **Deploy**.
-7. In your Supabase Dashboard under **Authentication** -> **URL Configuration**, add your Vercel production URL (e.g. `https://wellstrading.vercel.app`) to the **Redirect URLs**.
-
----
-
-## 7. Testing & Quality Assurance Checklist
-
-- [x] **Lightweight Charts:** Real OHLC historical candles render properly with zoom, pan, crosshair, and timeframes (1m, 5m, 15m, 1h, 4h, 1d).
-- [x] **Binance Public API:** Sub-second WebSocket stream updates live BTC/USDT and ETH/USDT tickers with green/red price flashing.
-- [x] **Twelve Data Integration:** Forex quotes (EUR/USD, GBP/USD) fetched securely via serverless proxy without leaking secrets to the browser.
-- [x] **Order Ticket:** Buy and Sell execution with dynamic volume adjustment (lots), pip calculations, and margin validation.
-- [x] **Margin Protection:** Insufficient free margin warnings block orders that exceed account limits.
-- [x] **Positions Management:** Real-time unrealized P/L mark-to-market updates; positions close atomically with balance crediting.
-- [x] **Balance Reset:** Resetting balance cleanly restores $10,000.00 USD virtual credit.
-- [x] **Search & Watchlist:** Global `Ctrl+K` instrument search with category filtering across Forex, Crypto, Stocks, and Commodities.
-- [x] **Serverless & SPA Compatibility:** `vercel.json` rewrites and SPA navigation handle browser reloads seamlessly.
-- [x] **Demo Disclaimer:** Platform clearly indicates simulated paper trading for training purposes only.

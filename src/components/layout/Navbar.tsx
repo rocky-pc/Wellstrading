@@ -7,14 +7,10 @@ import {
   TrendingUp,
   Search,
   RotateCcw,
-  User,
   LogOut,
   ChevronDown,
-  Layers,
-  Star,
-  Globe,
   Settings,
-  ShieldCheck,
+  Shield,
   Menu,
   X,
 } from 'lucide-react';
@@ -22,7 +18,7 @@ import InstrumentSearchModal from '../common/InstrumentSearchModal';
 
 export const Navbar: React.FC = () => {
   const { user, signOut } = useAuth();
-  const { account, equity, marginLevel, resetBalance } = useTrading();
+  const { account, equity, resetBalance } = useTrading();
   const location = useLocation();
   const [showSearch, setShowSearch] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -30,7 +26,7 @@ export const Navbar: React.FC = () => {
   const [resetting, setResetting] = useState(false);
 
   const handleReset = async () => {
-    if (confirm('Are you sure you want to reset your virtual demo balance to $10,000.00 USD?')) {
+    if (confirm('Reset your virtual demo balance to $10,000.00 USD?')) {
       setResetting(true);
       await resetBalance();
       setResetting(false);
@@ -39,50 +35,59 @@ export const Navbar: React.FC = () => {
   };
 
   const navLinks = [
-    { name: 'Dashboard', path: '/dashboard' },
     { name: 'Terminal', path: '/trade/EUR-USD' },
-    { name: 'Markets', path: '/markets' },
     { name: 'Positions', path: '/positions' },
+    { name: 'Markets', path: '/markets' },
     { name: 'History', path: '/history' },
-    { name: 'Watchlist', path: '/watchlist' },
   ];
 
   return (
     <>
-      <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-[#070b14]/95 backdrop-blur-md">
+      <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-[#070b14]/95 backdrop-blur-md font-sans">
         <div className="flex h-14 items-center justify-between px-3 md:px-6">
           {/* Left: Brand Logo & Navigation */}
           <div className="flex items-center gap-6">
             <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500/20 to-sky-500/20 border border-emerald-500/30 group-hover:border-emerald-500 transition-colors">
-                <TrendingUp className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 group-hover:border-emerald-500 transition-colors">
+                <TrendingUp className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
               </div>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-extrabold text-base tracking-tight text-white">WELLS</span>
-                  <span className="font-extrabold text-base tracking-tight text-emerald-400">TRADING</span>
-                </div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-base tracking-tight text-white">WELLS</span>
+                <span className="font-black text-base tracking-tight text-emerald-400">TRADING</span>
               </div>
             </Link>
 
             {/* Desktop Navigation Links */}
-            <nav className="hidden lg:flex items-center gap-1 text-sm font-medium">
+            <nav className="hidden lg:flex items-center gap-1 text-xs font-semibold">
               {navLinks.map((link) => {
                 const isActive = location.pathname.startsWith(link.path);
                 return (
                   <Link
                     key={link.path}
                     to={link.path}
-                    className={`px-3 py-1.5 rounded-md transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg transition-colors ${
                       isActive
-                        ? 'bg-slate-800 text-emerald-400 font-semibold'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                        ? 'bg-slate-800 text-emerald-400 font-bold'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
                     }`}
                   >
                     {link.name}
                   </Link>
                 );
               })}
+
+              {/* Admin Panel Nav Badge */}
+              <Link
+                to="/admin"
+                className={`ml-2 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 border ${
+                  location.pathname === '/admin'
+                    ? 'bg-emerald-500 text-slate-950 font-black border-emerald-500'
+                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Admin Panel</span>
+              </Link>
             </nav>
           </div>
 
@@ -94,7 +99,7 @@ export const Navbar: React.FC = () => {
             >
               <div className="flex items-center gap-2">
                 <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-400" />
-                <span>Search instruments... (EUR, BTC, AAPL)</span>
+                <span>Search pairs (EUR, BTC, AAPL)</span>
               </div>
               <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-800 rounded border border-slate-700">
                 Ctrl K
@@ -104,33 +109,25 @@ export const Navbar: React.FC = () => {
 
           {/* Right: Account Summary & Profile */}
           <div className="flex items-center gap-3">
-            {/* Quick Demo Stats Pill */}
             {account && (
-              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800/80 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    DEMO
-                  </span>
-                  <span className="text-slate-400 font-mono">{account.account_number}</span>
-                </div>
-                <div className="h-3 w-px bg-slate-800" />
+              <div className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800/80 text-xs font-mono">
                 <div>
-                  <span className="text-slate-400 mr-1.5">Balance:</span>
-                  <span className="font-semibold text-slate-100 font-mono">
+                  <span className="text-slate-500 mr-1.5">Balance:</span>
+                  <span className="font-semibold text-slate-100">
                     {formatCurrency(account.balance)}
                   </span>
                 </div>
                 <div className="h-3 w-px bg-slate-800" />
                 <div>
-                  <span className="text-slate-400 mr-1.5">Equity:</span>
-                  <span className={`font-semibold font-mono ${equity >= account.balance ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <span className="text-slate-500 mr-1.5">Equity:</span>
+                  <span className={`font-semibold ${equity >= account.balance ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {formatCurrency(equity)}
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Profile Dropdown */}
+            {/* Profile Menu */}
             {user ? (
               <div className="relative">
                 <button
@@ -154,6 +151,15 @@ export const Navbar: React.FC = () => {
                     </div>
 
                     <div className="py-1">
+                      <Link
+                        to="/admin"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-emerald-400 hover:bg-slate-800/80 transition-colors font-bold"
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>Admin Market Controls</span>
+                      </Link>
+
                       <button
                         onClick={handleReset}
                         disabled={resetting}
@@ -169,7 +175,7 @@ export const Navbar: React.FC = () => {
                         className="flex items-center gap-2.5 px-3 py-2 text-slate-300 hover:bg-slate-800/80 transition-colors"
                       >
                         <Settings className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Account Settings</span>
+                        <span>Settings</span>
                       </Link>
                     </div>
 
@@ -189,7 +195,14 @@ export const Navbar: React.FC = () => {
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-2 text-xs font-semibold">
+                <Link
+                  to="/admin"
+                  className="px-2.5 py-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 border border-emerald-500/30 transition-colors flex items-center gap-1"
+                >
+                  <Shield className="w-3 h-3" />
+                  <span>Admin</span>
+                </Link>
                 <Link
                   to="/login"
                   className="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
@@ -198,14 +211,14 @@ export const Navbar: React.FC = () => {
                 </Link>
                 <Link
                   to="/signup"
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold transition-colors shadow-lg shadow-emerald-500/20"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-colors"
                 >
-                  Open Demo Account
+                  Demo Account
                 </Link>
               </div>
             )}
 
-            {/* Mobile Menu Toggle */}
+            {/* Mobile Menu Button */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800"
@@ -218,18 +231,7 @@ export const Navbar: React.FC = () => {
         {/* Mobile Navigation Drawer */}
         {mobileMenuOpen && (
           <div className="lg:hidden border-t border-slate-800 bg-[#070b14] px-4 py-3 space-y-2">
-            <button
-              onClick={() => {
-                setShowSearch(true);
-                setMobileMenuOpen(false);
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 bg-slate-900 rounded-lg border border-slate-800"
-            >
-              <Search className="w-4 h-4 text-emerald-400" />
-              <span>Search Instruments...</span>
-            </button>
-
-            <div className="grid grid-cols-2 gap-1.5 pt-2">
+            <div className="grid grid-cols-2 gap-1.5">
               {navLinks.map((link) => (
                 <Link
                   key={link.path}
@@ -240,20 +242,22 @@ export const Navbar: React.FC = () => {
                   {link.name}
                 </Link>
               ))}
+              <Link
+                to="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-lg text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20"
+              >
+                ⚡ Admin Panel
+              </Link>
             </div>
-
-            {account && (
-              <div className="pt-2 border-t border-slate-800 text-xs flex justify-between items-center text-slate-400">
-                <span>Balance: {formatCurrency(account.balance)}</span>
-                <span className="text-emerald-400">Equity: {formatCurrency(equity)}</span>
-              </div>
-            )}
           </div>
         )}
       </header>
 
-      {/* Global Instrument Search Modal */}
+      {/* Global Search Modal */}
       {showSearch && <InstrumentSearchModal onClose={() => setShowSearch(false)} />}
     </>
   );
 };
+
+export default Navbar;

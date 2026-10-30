@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS public.watchlist_items (
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     symbol TEXT NOT NULL,
     name TEXT NOT NULL,
-    asset_class TEXT NOT NULL CHECK (asset_class IN ('FOREX', 'CRYPTO', 'STOCKS', 'INDICES', 'COMMODITIES')),
-    provider TEXT NOT NULL DEFAULT 'TWELVE_DATA' CHECK (provider IN ('TWELVE_DATA', 'BINANCE')),
+    asset_class TEXT NOT NULL CHECK (asset_class IN ('FOREX', 'CRYPTO', 'STOCKS', 'INDICES', 'COMMODITIES', 'CUSTOM')),
+    provider TEXT NOT NULL DEFAULT 'ALGORITHM',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT unique_watchlist_symbol UNIQUE (watchlist_id, symbol)
 );
@@ -484,3 +484,70 @@ BEGIN
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ==============================================================================
+-- 9. MARKET INSTRUMENTS TABLE (ADMIN CONTROLLED ALGORITHMIC TRADING)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.market_instruments (
+    symbol TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    asset_class TEXT NOT NULL DEFAULT 'FOREX',
+    base_currency TEXT,
+    quote_currency TEXT,
+    digits INTEGER NOT NULL DEFAULT 5,
+    base_price NUMERIC(18, 6) NOT NULL,
+    current_price NUMERIC(18, 6) NOT NULL,
+    target_price NUMERIC(18, 6),
+    direction TEXT NOT NULL DEFAULT 'UP' CHECK (direction IN ('UP', 'DOWN', 'SIDEWAYS')),
+    strength NUMERIC(8, 4) NOT NULL DEFAULT 1.0,
+    volatility NUMERIC(8, 6) NOT NULL DEFAULT 0.0003,
+    algorithm TEXT NOT NULL DEFAULT 'MOMENTUM' CHECK (algorithm IN ('MOMENTUM', 'TARGET_SEEK', 'SIN_WAVE', 'PUMP', 'DUMP')),
+    spread NUMERIC(18, 6) NOT NULL DEFAULT 0.0002,
+    min_lot NUMERIC(18, 4) DEFAULT 0.01,
+    lot_step NUMERIC(18, 4) DEFAULT 0.01,
+    max_lot NUMERIC(18, 4) DEFAULT 50.0,
+    contract_size NUMERIC(18, 4) DEFAULT 100000,
+    pip_size NUMERIC(18, 6) DEFAULT 0.0001,
+    default_leverage INTEGER DEFAULT 100,
+    popular BOOLEAN DEFAULT TRUE,
+    is_custom BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS for market_instruments
+ALTER TABLE public.market_instruments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public can view market instruments" ON public.market_instruments;
+CREATE POLICY "Public can view market instruments" ON public.market_instruments
+    FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow any user/admin to modify market instruments" ON public.market_instruments;
+CREATE POLICY "Allow any user/admin to modify market instruments" ON public.market_instruments
+    FOR ALL USING (true);
+
+-- Seed Baseline Algorithmic Pairs
+INSERT INTO public.market_instruments (
+    symbol, name, asset_class, base_currency, quote_currency, digits, base_price, current_price, direction, strength, volatility, algorithm, spread, is_custom, is_active
+) VALUES
+    ('EUR/USD', 'Euro / US Dollar', 'FOREX', 'EUR', 'USD', 5, 1.08640, 1.08640, 'UP', 1.0, 0.00015, 'MOMENTUM', 0.00015, FALSE, TRUE),
+    ('GBP/USD', 'British Pound / US Dollar', 'FOREX', 'GBP', 'USD', 5, 1.29850, 1.29850, 'UP', 1.2, 0.00020, 'MOMENTUM', 0.00018, FALSE, TRUE),
+    ('USD/JPY', 'US Dollar / Japanese Yen', 'FOREX', 'USD', 'JPY', 3, 152.450, 152.450, 'DOWN', 1.0, 0.00030, 'MOMENTUM', 0.020, FALSE, TRUE),
+    ('AUD/USD', 'Australian Dollar / US Dollar', 'FOREX', 'AUD', 'USD', 5, 0.65820, 0.65820, 'UP', 0.9, 0.00020, 'MOMENTUM', 0.00018, FALSE, TRUE),
+    ('BTC/USDT', 'Bitcoin / Tether', 'CRYPTO', 'BTC', 'USDT', 2, 86450.00, 86450.00, 'UP', 1.5, 0.00080, 'MOMENTUM', 2.50, FALSE, TRUE),
+    ('ETH/USDT', 'Ethereum / Tether', 'CRYPTO', 'ETH', 'USDT', 2, 3180.50, 3180.50, 'UP', 1.4, 0.00090, 'MOMENTUM', 0.40, FALSE, TRUE),
+    ('SOL/USDT', 'Solana / Tether', 'CRYPTO', 'SOL', 'USDT', 2, 198.40, 198.40, 'UP', 1.8, 0.00120, 'MOMENTUM', 0.08, FALSE, TRUE),
+    ('XAU/USD', 'Gold / US Dollar', 'COMMODITIES', 'XAU', 'USD', 2, 2748.20, 2748.20, 'UP', 1.1, 0.00045, 'MOMENTUM', 0.35, FALSE, TRUE),
+    ('AAPL', 'Apple Inc.', 'STOCKS', 'USD', 'USD', 2, 234.80, 234.80, 'UP', 0.8, 0.00035, 'MOMENTUM', 0.05, FALSE, TRUE),
+    ('TSLA', 'Tesla, Inc.', 'STOCKS', 'USD', 'USD', 2, 218.40, 218.40, 'DOWN', 1.2, 0.00085, 'MOMENTUM', 0.08, FALSE, TRUE),
+    ('NVDA', 'NVIDIA Corporation', 'STOCKS', 'USD', 'USD', 2, 144.50, 144.50, 'UP', 1.6, 0.00095, 'MOMENTUM', 0.06, FALSE, TRUE)
+ON CONFLICT (symbol) DO UPDATE
+SET base_price = EXCLUDED.base_price,
+    current_price = EXCLUDED.current_price,
+    direction = EXCLUDED.direction;
+
+-- Enable Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE public.market_instruments;
+

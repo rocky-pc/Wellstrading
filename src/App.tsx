@@ -16,6 +16,7 @@ import PositionsPage from '@/pages/PositionsPage';
 import HistoryPage from '@/pages/HistoryPage';
 import WatchlistPage from '@/pages/WatchlistPage';
 import SettingsPage from '@/pages/SettingsPage';
+import AdminPanelPage from '@/pages/AdminPanelPage';
 
 export const App: React.FC = () => {
   return (
@@ -33,6 +34,7 @@ export const App: React.FC = () => {
                 <Route path="/markets" element={<MarketsPage />} />
                 <Route path="/trade" element={<Navigate to="/trade/EUR-USD" replace />} />
                 <Route path="/trade/:symbol" element={<TradingTerminalPage />} />
+                <Route path="/admin" element={<AdminPanelPage />} />
 
                 {/* Protected Authenticated Routes */}
                 <Route

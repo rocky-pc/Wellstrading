@@ -20,17 +20,15 @@ import {
 export const LandingPage: React.FC = () => {
   const [tickerQuotes, setTickerQuotes] = useState<Record<string, MarketQuote>>({});
 
-  const featuredSymbols = ['EUR/USD', 'BTCUSDT', 'ETHUSDT', 'AAPL', 'NVDA', 'XAU/USD'];
+  const featuredSymbols = ['EUR/USD', 'BTC/USDT', 'ETH/USDT', 'AAPL', 'NVDA', 'XAU/USD'];
 
   useEffect(() => {
-    featuredSymbols.forEach(async (symbol) => {
-      try {
-        const q = await MarketDataService.getQuote(symbol);
-        setTickerQuotes((prev) => ({ ...prev, [symbol]: q }));
-      } catch {
-        // ignore
-      }
+    const unsubscribe = MarketDataService.subscribeAll((newQuotes) => {
+      setTickerQuotes((prev) => ({ ...prev, ...newQuotes }));
     });
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   return (
@@ -88,7 +86,7 @@ export const LandingPage: React.FC = () => {
             </h1>
 
             <p className="text-base sm:text-lg text-slate-400 max-w-2xl leading-relaxed">
-              Experience the adrenaline of high-frequency Forex, Crypto, and Stock trading on our institutional-grade serverless platform. Powered by real-time Twelve Data &amp; Binance public feeds, with $10,000 virtual USD capital.
+              Experience the adrenaline of high-frequency Forex, Crypto, and Stock trading with low-latency synchronized market movements and customizable admin algorithm controls. Powered by Supabase data with $10,000 virtual USD capital.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center gap-4 pt-2">
@@ -193,14 +191,14 @@ export const LandingPage: React.FC = () => {
               Institutional Asset Catalog
             </h2>
             <p className="text-slate-400 text-sm mt-1">
-              Live market quotes updated from Twelve Data and Binance.
+              Predefined algorithmic market pairs with 1-second real-time movements.
             </p>
           </div>
           <Link
             to="/markets"
             className="text-emerald-400 hover:text-emerald-300 text-xs font-semibold flex items-center gap-1.5"
           >
-            <span>Explore All 20+ Instruments</span>
+            <span>Explore All Instruments</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
@@ -212,7 +210,7 @@ export const LandingPage: React.FC = () => {
                 <tr>
                   <th className="py-3 px-4">Instrument</th>
                   <th className="py-3 px-4">Class</th>
-                  <th className="py-3 px-4">Provider</th>
+                  <th className="py-3 px-4">Trajectory</th>
                   <th className="py-3 px-4">Last Price</th>
                   <th className="py-3 px-4">24h Change</th>
                   <th className="py-3 px-4 text-right">Action</th>
@@ -239,8 +237,16 @@ export const LandingPage: React.FC = () => {
                           {inst.assetClass}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-slate-400 font-sans">
-                        {inst.provider === 'BINANCE' ? 'Binance Public API' : 'Twelve Data API'}
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            inst.direction === 'UP'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          }`}
+                        >
+                          {inst.direction === 'UP' ? '▲ BULLISH' : '▼ BEARISH'}
+                        </span>
                       </td>
                       <td className="py-3 px-4 font-bold text-slate-100">
                         {quote ? formatPrice(quote.price, inst.digits) : '---'}
@@ -307,11 +313,11 @@ export const LandingPage: React.FC = () => {
 
           <div className="p-6 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-              <Globe2 className="w-5 h-5" />
+              <Zap className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-base text-slate-100">Twelve Data + Binance Feeds</h3>
+            <h3 className="font-bold text-base text-slate-100">Algorithmic Market Engine</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Live market quotes, real OHLC historical candles, and live WebSocket streaming for high-frequency crypto trading.
+              Predefined chart trajectories, sec-by-sec low-latency movements, and customizable currency pairs set via the Admin panel.
             </p>
           </div>
         </div>

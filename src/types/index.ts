@@ -1,5 +1,7 @@
-export type AssetClass = 'FOREX' | 'CRYPTO' | 'STOCKS' | 'INDICES' | 'COMMODITIES';
-export type MarketDataProvider = 'TWELVE_DATA' | 'BINANCE';
+export type AssetClass = 'FOREX' | 'CRYPTO' | 'STOCKS' | 'INDICES' | 'COMMODITIES' | 'CUSTOM';
+export type MarketDataProvider = 'ALGORITHM';
+export type MarketTrend = 'UP' | 'DOWN' | 'SIDEWAYS';
+export type MarketAlgorithm = 'MOMENTUM' | 'TARGET_SEEK' | 'SIN_WAVE' | 'PUMP' | 'DUMP';
 
 export interface Instrument {
   symbol: string;
@@ -16,6 +18,18 @@ export interface Instrument {
   pipSize: number;
   defaultLeverage: number;
   popular?: boolean;
+  // Admin algorithmic control fields
+  basePrice: number;
+  currentPrice: number;
+  targetPrice?: number;
+  direction: MarketTrend;
+  strength: number;      // 0.5 to 5.0 (speed/bias multiplier)
+  volatility: number;    // jitter magnitude
+  algorithm: MarketAlgorithm;
+  spread: number;
+  isCustom?: boolean;
+  isActive?: boolean;
+  updatedAt: string;
 }
 
 export interface MarketQuote {
@@ -33,6 +47,8 @@ export interface MarketQuote {
   provider: MarketDataProvider;
   isRealTime: boolean;
   isMarketOpen: boolean;
+  direction?: MarketTrend;
+  targetPrice?: number;
 }
 
 export interface CandleData {
