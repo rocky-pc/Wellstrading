@@ -61,26 +61,13 @@ CREATE TABLE IF NOT EXISTS public.trading_accounts (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. WATCHLISTS TABLE
-CREATE TABLE IF NOT EXISTS public.watchlists (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    name TEXT NOT NULL DEFAULT 'Default Watchlist',
-    is_default BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 4. WATCHLIST ITEMS TABLE (Predefined Algorithmic + Custom Pairs)
+-- 3. WATCHLIST ITEMS TABLE (Streamlined Favorites)
 CREATE TABLE IF NOT EXISTS public.watchlist_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    watchlist_id UUID NOT NULL REFERENCES public.watchlists(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    symbol TEXT NOT NULL,
-    name TEXT NOT NULL,
-    asset_class TEXT NOT NULL CHECK (asset_class IN ('FOREX', 'CRYPTO', 'STOCKS', 'INDICES', 'COMMODITIES', 'CUSTOM')),
-    provider TEXT NOT NULL DEFAULT 'ALGORITHM' CHECK (provider IN ('ALGORITHM', 'TWELVE_DATA', 'BINANCE')),
+    symbol TEXT NOT NULL REFERENCES public.market_instruments(symbol) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT unique_watchlist_symbol UNIQUE (watchlist_id, symbol)
+    CONSTRAINT unique_user_watchlist_symbol UNIQUE (user_id, symbol)
 );
 
 -- 5. ORDERS TABLE
@@ -124,7 +111,7 @@ CREATE TABLE IF NOT EXISTS public.positions (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. TRADES TABLE (Closed trades history)
+-- 6. TRADES TABLE (Closed trades history)
 CREATE TABLE IF NOT EXISTS public.trades (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -142,20 +129,7 @@ CREATE TABLE IF NOT EXISTS public.trades (
     closed_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. BALANCE TRANSACTIONS TABLE
-CREATE TABLE IF NOT EXISTS public.balance_transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    account_id UUID NOT NULL REFERENCES public.trading_accounts(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('INITIAL_DEPOSIT', 'RESET_DEMO', 'TRADE_REALIZED_PNL', 'COMMISSION', 'ADJUSTMENT')),
-    amount NUMERIC(18, 4) NOT NULL,
-    balance_after NUMERIC(18, 4) NOT NULL,
-    reference_id TEXT,
-    description TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 9. ADMIN PLATFORM SETTINGS TABLE
+-- 7. ADMIN PLATFORM SETTINGS TABLE
 CREATE TABLE IF NOT EXISTS public.admin_settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
     platform_name TEXT NOT NULL DEFAULT 'WellsTrading',
@@ -265,14 +239,15 @@ DROP POLICY IF EXISTS "Users can view own trading accounts" ON public.trading_ac
 CREATE POLICY "Users can view own trading accounts" ON public.trading_accounts
     FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
 
--- Watchlists Policies
-DROP POLICY IF EXISTS "Users can manage own watchlists" ON public.watchlists;
-CREATE POLICY "Users can manage own watchlists" ON public.watchlists
-    FOR ALL USING (auth.uid() = user_id);
-
+-- Watchlist Items Policies
 DROP POLICY IF EXISTS "Users can manage own watchlist items" ON public.watchlist_items;
 CREATE POLICY "Users can manage own watchlist items" ON public.watchlist_items
-    FOR ALL USING (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Public can view watchlist items" ON public.watchlist_items;
+CREATE POLICY "Public can view watchlist items" ON public.watchlist_items
+    FOR SELECT USING (true);
 
 -- Orders Policies
 DROP POLICY IF EXISTS "Users can view own orders" ON public.orders;
@@ -291,11 +266,6 @@ CREATE POLICY "Users can view own positions" ON public.positions
 -- Trades Policies
 DROP POLICY IF EXISTS "Users can view own trades" ON public.trades;
 CREATE POLICY "Users can view own trades" ON public.trades
-    FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
-
--- Balance transactions Policies
-DROP POLICY IF EXISTS "Users can view own balance transactions" ON public.balance_transactions;
-CREATE POLICY "Users can view own balance transactions" ON public.balance_transactions
     FOR SELECT USING (auth.uid() = user_id OR public.is_admin());
 
 -- Admin Settings Policies
@@ -364,26 +334,15 @@ BEGIN
         NEW.id, new_account_num, 'DEMO', 'USD', 10000.0000, 10000.0000, 0.0000, 10000.0000, 100
     ) RETURNING id INTO acc_id;
 
-    -- Record initial virtual deposit
-    INSERT INTO public.balance_transactions (
-        user_id, account_id, type, amount, balance_after, description
-    ) VALUES (
-        NEW.id, acc_id, 'INITIAL_DEPOSIT', 10000.0000, 10000.0000, 'Demo Account Initial Virtual Funds'
-    );
-
-    -- Create Default Watchlist
-    INSERT INTO public.watchlists (user_id, name, is_default)
-    VALUES (NEW.id, 'My Favorites', TRUE)
-    RETURNING id INTO wl_id;
-
-    -- Populate initial watchlist with algorithmic instruments
-    INSERT INTO public.watchlist_items (watchlist_id, user_id, symbol, name, asset_class, provider) VALUES
-        (wl_id, NEW.id, 'EUR/USD', 'Euro / US Dollar', 'FOREX', 'ALGORITHM'),
-        (wl_id, NEW.id, 'GBP/USD', 'British Pound / US Dollar', 'FOREX', 'ALGORITHM'),
-        (wl_id, NEW.id, 'USD/JPY', 'US Dollar / Japanese Yen', 'FOREX', 'ALGORITHM'),
-        (wl_id, NEW.id, 'BTC/USDT', 'Bitcoin / Tether', 'CRYPTO', 'ALGORITHM'),
-        (wl_id, NEW.id, 'ETH/USDT', 'Ethereum / Tether', 'CRYPTO', 'ALGORITHM'),
-        (wl_id, NEW.id, 'AAPL', 'Apple Inc.', 'STOCKS', 'ALGORITHM')
+    -- Seed Default Algorithmic Watchlist Items directly
+    INSERT INTO public.watchlist_items (user_id, symbol) VALUES
+        (NEW.id, 'EUR/USD'),
+        (NEW.id, 'GBP/USD'),
+        (NEW.id, 'USD/JPY'),
+        (NEW.id, 'BTC/USDT'),
+        (NEW.id, 'ETH/USDT'),
+        (NEW.id, 'AAPL'),
+        (NEW.id, 'XAU/USD')
     ON CONFLICT DO NOTHING;
 
     RETURN NEW;
@@ -569,14 +528,6 @@ BEGIN
         updated_at = NOW()
     WHERE id = v_account.id;
 
-    -- Record transaction
-    INSERT INTO public.balance_transactions (
-        user_id, account_id, type, amount, balance_after, reference_id, description
-    ) VALUES (
-        v_user_id, v_account.id, 'TRADE_REALIZED_PNL', v_realized_pnl, v_new_balance, v_trade_id::TEXT,
-        'Realized P/L on ' || v_pos.side || ' ' || v_pos.quantity || ' ' || v_pos.symbol
-    );
-
     RETURN jsonb_build_object(
         'success', true,
         'trade_id', v_trade_id,
@@ -620,13 +571,6 @@ BEGIN
         free_margin = 10000.0000,
         updated_at = NOW()
     WHERE id = v_account.id;
-
-    -- Record transaction
-    INSERT INTO public.balance_transactions (
-        user_id, account_id, type, amount, balance_after, description
-    ) VALUES (
-        v_user_id, v_account.id, 'RESET_DEMO', 10000.0000 - v_account.balance, 10000.0000, 'Demo Balance Reset to $10,000'
-    );
 
     RETURN jsonb_build_object(
         'success', true,
@@ -712,5 +656,11 @@ END $$;
 DO $$
 BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.trading_accounts;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.watchlist_items;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;

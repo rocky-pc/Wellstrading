@@ -20,16 +20,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchUserProfile = async (userId: string, email: string, metaFullName?: string): Promise<UserProfile> => {
+    let profileData: any = null;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+        if (data) profileData = data;
+      } catch {
+        // Fallback silently if table query fails
+      }
+    }
+    const isAdmin =
+      profileData?.is_admin === true ||
+      profileData?.role === 'ADMIN' ||
+      profileData?.role === 'SUPER_ADMIN' ||
+      email === 'sjega82@gmail.com' ||
+      email === 'admin@wellstrading.com';
+
+    return {
+      id: userId,
+      email,
+      full_name: profileData?.full_name || metaFullName || 'Trader',
+      role: isAdmin ? 'ADMIN' : (profileData?.role || 'USER'),
+      is_admin: isAdmin,
+      country: profileData?.country || 'United States',
+      preferred_currency: profileData?.preferred_currency || 'USD',
+      avatar_url: profileData?.avatar_url,
+    };
+  };
+
   useEffect(() => {
     if (isSupabaseConfigured && supabase) {
       // 1. Check existing Supabase session
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
         if (session?.user) {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            full_name: session.user.user_metadata?.full_name || 'Trader',
-          });
+          const profile = await fetchUserProfile(
+            session.user.id,
+            session.user.email || '',
+            session.user.user_metadata?.full_name
+          );
+          setUser(profile);
         }
         setLoading(false);
       });
@@ -37,13 +67,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 2. Listen for auth changes
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange((_event, session) => {
+      } = supabase.auth.onAuthStateChange(async (_event, session) => {
         if (session?.user) {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            full_name: session.user.user_metadata?.full_name || 'Trader',
-          });
+          const profile = await fetchUserProfile(
+            session.user.id,
+            session.user.email || '',
+            session.user.user_metadata?.full_name
+          );
+          setUser(profile);
         } else {
           setUser(null);
         }
@@ -83,11 +114,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       if (error) return { error };
       if (data.user) {
-        setUser({
-          id: data.user.id,
-          email: data.user.email || '',
-          full_name: data.user.user_metadata?.full_name || 'Trader',
-        });
+        const profile = await fetchUserProfile(
+          data.user.id,
+          data.user.email || '',
+          data.user.user_metadata?.full_name
+        );
+        setUser(profile);
       }
       return { error: null };
     } else {

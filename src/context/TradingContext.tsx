@@ -524,6 +524,22 @@ export const TradingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const next = exists ? prev.filter((s) => s !== symbol) : [...prev, symbol];
       if (user) {
         localStorage.setItem(`${STORAGE_PREFIX}watchlist_${user.id}`, JSON.stringify(next));
+
+        if (isSupabaseConfigured && supabase) {
+          if (exists) {
+            supabase
+              .from('watchlist_items')
+              .delete()
+              .eq('user_id', user.id)
+              .eq('symbol', symbol)
+              .then();
+          } else {
+            supabase
+              .from('watchlist_items')
+              .insert({ user_id: user.id, symbol })
+              .then();
+          }
+        }
       }
       return next;
     });
